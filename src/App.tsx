@@ -1,79 +1,111 @@
 import { useState, useEffect } from "react";
+import io from "socket.io-client";
 import {
   ArrowUp,
   ArrowDown,
   Clock,
-  AlertCircle,
   Eye,
   Shield,
-  MessageSquare,
-  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { ThemeProvider } from "./components/theme-provider";
 import "./index.css";
+import TimeAgo from 'react-timeago';
+
+const SOCKET_URL = "http://localhost:4000"; // 서버 주소
+
+// 메시지 타입 정의
+type Message = {
+  id: string;
+  content: string;
+  time: string;
+  isAlert: boolean;
+  views: number;
+  forwards: number;
+  channel: string;
+  threat_actor: string;
+  messageId: number;
+  rawDate: string;
+  uniqueId: string;
+};
 
 function App() {
-  // 실제 MongoDB 데이터를 저장할 상태
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [expandedMessages, setExpandedMessages] = useState({});
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<Record<string | number, boolean>>({});
+  const [monitorActor, setMonitorActor] = useState<string | null>(null); // 모니터링 중인 행위공격자
 
   // 더보기 토글 함수
-  const toggleExpand = (id) => {
+  const toggleExpand = (id: string | number) => {
     setExpandedMessages((prev) => ({
       ...prev,
       [id]: !prev[id],
     }));
   };
 
-  // MongoDB에서 데이터 가져오기
+  // 최초 데이터 로드 및 소켓 연결
   useEffect(() => {
-    fetch("http://localhost:4000/api/messages")
+    fetch(`${SOCKET_URL}/api/messages`)
       .then((response) => {
-        if (!response.ok) {
-          throw new Error("서버 응답 오류");
-        }
+        if (!response.ok) throw new Error("서버 응답 오류");
         return response.json();
       })
       .then((data) => {
-        // MongoDB 데이터 구조를 UI에 맞게 변환
-        const formattedData = data.map((item) => ({
-          id: item._id,
-          content: item.text || "내용 없음",
-          time: formatDate(item.date),
-          isAlert:
-            item.threat_actor === "Anonymous Russia channel" ||
-            Boolean(item.attack_type),
-          views: item.views || Math.floor(Math.random() * 2000),
-          forwards: item.forwards || Math.floor(Math.random() * 100),
-          channel:
-            item.channel ||
-            extractTelegramLink(item.text) ||
-            "https://t.me/anzu_team",
-          threat_actor: item.threat_actor || "Anzu Team",
-          messageId: item.message_id || Math.floor(Math.random() * 100),
-          rawDate: item.date || new Date().toISOString(),
-          uniqueId: `nw-${Math.floor(Math.random() * 9999999999999)}`,
-        }));
-        setMessages(formattedData);
+        setMessages(formatMessages(data));
         setLoading(false);
       })
-      .catch((err) => {
-        console.error("데이터 로딩 오류:", err);
+      .catch(() => {
         setError("텔레그램 메시지를 불러오는데 실패했습니다");
         setLoading(false);
       });
+
+    const sock = io(SOCKET_URL);
+
+    sock.on("dataChanged", (change: any) => {
+      if (change.operationType === "insert" && change.fullDocument) {
+        setMessages((prev) => [
+          formatSingleMessage(change.fullDocument),
+          ...prev,
+        ]);
+      }
+    });
+
+    return () => {
+      sock.disconnect();
+    };
   }, []);
 
+  // 메시지 포맷터
+  const formatMessages = (data: any[]): Message[] => data.map(formatSingleMessage);
+
+  function formatSingleMessage(item: any): Message {
+    return {
+      id: item._id,
+      content: item.text || "내용 없음",
+      time: formatDate(item.date),
+      isAlert:
+        item.threat_actor === "Anonymous Russia channel" ||
+        Boolean(item.attack_type),
+      views: item.views || Math.floor(Math.random() * 2000),
+      forwards: item.forwards || Math.floor(Math.random() * 100),
+      channel:
+        item.channel ||
+        extractTelegramLink(item.text) ||
+        "https://t.me/anzu_team",
+      threat_actor: item.threat_actor || "Anzu Team",
+      messageId: item.message_id || Math.floor(Math.random() * 100),
+      rawDate: item.date || new Date().toISOString(),
+      uniqueId: `nw-${Math.floor(Math.random() * 9999999999999)}`,
+    };
+  }
+
   // 날짜 포맷팅 함수
-  const formatDate = (dateString) => {
+  const formatDate = (dateString: string): string => {
     try {
-      // MongoDB의 날짜 포맷을 UI 형식으로 변환
       const date = new Date(dateString);
       const now = new Date();
-      const diffMs = now - date;
+      const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
 
       if (diffMins < 1) return "방금";
@@ -90,14 +122,14 @@ function App() {
   };
 
   // 텔레그램 링크 추출 함수
-  const extractTelegramLink = (text) => {
+  const extractTelegramLink = (text: string): string | null => {
     if (!text) return null;
     const match = text.match(/https?:\/\/t\.me\/[^\s]+/);
     return match ? match[0] : null;
   };
 
   // 채널명 추출 함수
-  const extractChannelName = (url) => {
+  const extractChannelName = (url: string): string => {
     if (!url) return "unknown";
     try {
       const match = url.match(/t\.me\/([^/]+)/);
@@ -106,6 +138,16 @@ function App() {
       return "unknown";
     }
   };
+
+  // 필터링된 메시지 목록
+  const filteredMessages = monitorActor
+    ? messages.filter((msg) => msg.threat_actor === monitorActor)
+    : messages;
+
+  // 행위공격자 목록(중복제거)
+  const actorList = Array.from(
+    new Set(messages.map((msg) => msg.threat_actor))
+  ).filter(Boolean);
 
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
@@ -209,6 +251,33 @@ function App() {
                   </div>
                 </div>
 
+                {/* 행위공격자별 모니터링 버튼 목록 */}
+                <div className="flex flex-wrap gap-2 p-4 border-b border-gray-800">
+                  <button
+                    className={`text-xs px-2 py-1 rounded ${
+                      monitorActor === null
+                        ? "bg-blue-700 text-white"
+                        : "bg-gray-800 text-gray-300"
+                    }`}
+                    onClick={() => setMonitorActor(null)}
+                  >
+                    전체 보기
+                  </button>
+                  {actorList.map((actor) => (
+                    <button
+                      key={actor}
+                      className={`text-xs px-2 py-1 rounded ${
+                        monitorActor === actor
+                          ? "bg-blue-700 text-white"
+                          : "bg-gray-800 text-gray-300"
+                      }`}
+                      onClick={() => setMonitorActor(actor)}
+                    >
+                      {actor}
+                    </button>
+                  ))}
+                </div>
+
                 {loading ? (
                   <div className="flex justify-center items-center h-[200px]">
                     <p className="text-gray-400">데이터 로딩 중...</p>
@@ -219,7 +288,7 @@ function App() {
                   </div>
                 ) : (
                   <div className="max-h-[400px] overflow-y-auto">
-                    {messages.map((message, index) => (
+                    {filteredMessages.map((message, index) => (
                       <div
                         key={message.id || index}
                         className={`border-b border-gray-800 p-4 ${
@@ -228,27 +297,17 @@ function App() {
                       >
                         {/* 메시지 헤더 부분 */}
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center">
-                            <span className="bg-red-900 text-white text-xs px-2 py-0.5 rounded mr-2">
-                              {message.threat_actor || "Anzu Team"}
-                            </span>
-                          </div>
-                          <div className="flex items-center">
-                            <span className="text-gray-400 text-xs">
-                              조회수: {message.views}
-                            </span>
-                            <span className="text-gray-400 text-xs ml-3">
-                              전달: {message.forwards}
-                            </span>
-                          </div>
+                          <span className="bg-red-900 text-white text-xs px-2 py-0.5 rounded mr-2">
+                            {message.threat_actor}
+                          </span>
+                          <span className="text-xs text-gray-300">
+                            <TimeAgo date={message.rawDate} />
+                          </span>
                         </div>
 
                         {/* 메시지 본문 */}
                         <div className="mb-2">
-                          <p className="text-sm">
-                            새로운 위험 정보가 감지되었습니다. 자세한 내용은
-                            채널을 확인하세요.
-                          </p>
+                          <div>{message.content}</div>
 
                           {message.channel && (
                             <div className="mt-2 text-xs text-blue-400 break-all">
@@ -259,8 +318,7 @@ function App() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                               >
-                                https://t.me/
-                                {extractChannelName(message.channel)}
+                                https://t.me/{extractChannelName(message.channel)}
                               </a>
                             </div>
                           )}
@@ -269,10 +327,8 @@ function App() {
                           {expandedMessages[message.id || index] && (
                             <div className="mt-2 text-xs text-gray-400">
                               <div>메시지ID: {message.messageId}</div>
-                              <div>날짜: {new Date().toISOString()}</div>
-                              <div>미디어: 없음</div>
+                              <div>날짜: {message.rawDate}</div>
                               <div>ID: {message.uniqueId}</div>
-                              <div>원본: {message.content}</div>
                             </div>
                           )}
                         </div>
@@ -291,21 +347,16 @@ function App() {
 
                         {/* 하단 액션 버튼 영역 */}
                         <div className="flex mt-2 gap-2 text-xs text-gray-500">
-                          <button className="flex items-center">
+                          <button
+                            className="flex items-center"
+                            onClick={() => setMonitorActor(message.threat_actor)}
+                          >
                             <Eye className="mr-1 h-3 w-3" />
                             모니터링
                           </button>
                           <button className="flex items-center">
                             <Shield className="mr-1 h-3 w-3" />
                             차단
-                          </button>
-                          <button className="flex items-center">
-                            <MessageSquare className="mr-1 h-3 w-3" />
-                            답장
-                          </button>
-                          <button className="flex items-center">
-                            <ExternalLink className="mr-1 h-3 w-3" />
-                            채널 확인
                           </button>
                         </div>
                       </div>
