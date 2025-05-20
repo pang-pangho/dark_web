@@ -52,14 +52,11 @@ async function startServer() {
       }
     });
 
-    // === React 정적 파일 서비스 추가 ===
-    app.use(express.static(path.join(__dirname, "dist"))); // dist → 빌드 폴더명에 맞게 수정
-
-    // SPA 라우팅 지원 (API 이외 모든 경로는 React index.html 반환)
+    app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (req, res) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
-
+    
     server.listen(4000, () => console.log("Server running on port 4000"));
   } catch (err) {
     console.error("MongoDB connection failed:", err);
