@@ -1,0 +1,324 @@
+import { useState, useEffect } from "react";
+import {
+  ArrowUp,
+  ArrowDown,
+  Clock,
+  AlertCircle,
+  Eye,
+  Shield,
+  MessageSquare,
+  ExternalLink,
+} from "lucide-react";
+import { Card, CardContent } from "./components/ui/card";
+import { ThemeProvider } from "./components/theme-provider";
+import "./index.css";
+
+function App() {
+  // 실제 MongoDB 데이터를 저장할 상태
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expandedMessages, setExpandedMessages] = useState({});
+
+  // 더보기 토글 함수
+  const toggleExpand = (id) => {
+    setExpandedMessages((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  // MongoDB에서 데이터 가져오기
+  useEffect(() => {
+    fetch("http://localhost:4000/api/messages")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("서버 응답 오류");
+        }
+        return response.json();
+      })
+      .then((data) => {
+        // MongoDB 데이터 구조를 UI에 맞게 변환
+        const formattedData = data.map((item) => ({
+          id: item._id,
+          content: item.text || "내용 없음",
+          time: formatDate(item.date),
+          isAlert:
+            item.threat_actor === "Anonymous Russia channel" ||
+            Boolean(item.attack_type),
+          views: item.views || Math.floor(Math.random() * 2000),
+          forwards: item.forwards || Math.floor(Math.random() * 100),
+          channel:
+            item.channel ||
+            extractTelegramLink(item.text) ||
+            "https://t.me/anzu_team",
+          threat_actor: item.threat_actor || "Anzu Team",
+          messageId: item.message_id || Math.floor(Math.random() * 100),
+          rawDate: item.date || new Date().toISOString(),
+          uniqueId: `nw-${Math.floor(Math.random() * 9999999999999)}`,
+        }));
+        setMessages(formattedData);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("데이터 로딩 오류:", err);
+        setError("텔레그램 메시지를 불러오는데 실패했습니다");
+        setLoading(false);
+      });
+  }, []);
+
+  // 날짜 포맷팅 함수
+  const formatDate = (dateString) => {
+    try {
+      // MongoDB의 날짜 포맷을 UI 형식으로 변환
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+
+      if (diffMins < 1) return "방금";
+      if (diffMins < 60) return `${diffMins}분전`;
+
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}시간전`;
+
+      const diffDays = Math.floor(diffHours / 24);
+      return `${diffDays}일전`;
+    } catch (e) {
+      return "날짜 오류";
+    }
+  };
+
+  // 텔레그램 링크 추출 함수
+  const extractTelegramLink = (text) => {
+    if (!text) return null;
+    const match = text.match(/https?:\/\/t\.me\/[^\s]+/);
+    return match ? match[0] : null;
+  };
+
+  // 채널명 추출 함수
+  const extractChannelName = (url) => {
+    if (!url) return "unknown";
+    try {
+      const match = url.match(/t\.me\/([^/]+)/);
+      return match ? match[1] : "unknown";
+    } catch (e) {
+      return "unknown";
+    }
+  };
+
+  return (
+    <ThemeProvider defaultTheme="dark" attribute="class">
+      <div className="flex min-h-screen flex-col bg-black text-white">
+        <header className="border-b border-gray-800 p-4">
+          <h1 className="text-2xl font-bold">Untitle</h1>
+        </header>
+        <main className="flex-1 p-4 md:p-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="bg-purple-900 border-none text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium opacity-70">
+                      감지된 위협
+                    </p>
+                    <h2 className="text-3xl font-bold">12.7K</h2>
+                  </div>
+                  <div className="flex items-center text-green-400">
+                    <ArrowUp className="h-4 w-4 mr-1" />
+                    <span className="text-xs">+16%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-purple-700 border-none text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium opacity-70">위험 지수</p>
+                    <h2 className="text-3xl font-bold">38%</h2>
+                  </div>
+                  <div className="flex items-center text-red-400">
+                    <ArrowDown className="h-4 w-4 mr-1" />
+                    <span className="text-xs">-4%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-blue-900 border-none text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium opacity-70">
+                      모니터링 채널
+                    </p>
+                    <h2 className="text-3xl font-bold">73</h2>
+                  </div>
+                  <div className="flex items-center text-green-400">
+                    <ArrowUp className="h-4 w-4 mr-1" />
+                    <span className="text-xs">+5</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-emerald-800 border-none text-white">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium opacity-70">
+                      데이터 포인트
+                    </p>
+                    <h2 className="text-3xl font-bold">9M</h2>
+                  </div>
+                  <div className="flex items-center text-green-400">
+                    <ArrowUp className="h-4 w-4 mr-1" />
+                    <span className="text-xs">+23%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <Card className="border-gray-800 bg-gray-950">
+              <CardContent className="p-6">
+                <h3 className="text-xl font-bold mb-4">활동 추이</h3>
+                <div className="h-[200px] w-full">
+                  {/* Activity chart would go here */}
+                  <div className="h-full w-full bg-gradient-to-b from-purple-900/20 to-transparent rounded-md flex items-end">
+                    <div className="h-[30%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[50%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[40%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[70%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[60%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[80%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                    <div className="h-[90%] w-[10%] bg-purple-700 rounded-sm mx-1"></div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 텔레그램 위험 정보 섹션 */}
+            <Card className="border-gray-800 bg-gray-950">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between border-b border-gray-800 p-4">
+                  <h3 className="text-xl font-bold">텔레그램 위험 정보</h3>
+                  <div className="flex items-center text-sm text-gray-400">
+                    <Clock className="mr-1 h-4 w-4" />
+                    <span>실시간</span>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="flex justify-center items-center h-[200px]">
+                    <p className="text-gray-400">데이터 로딩 중...</p>
+                  </div>
+                ) : error ? (
+                  <div className="flex justify-center items-center h-[200px]">
+                    <p className="text-red-400">{error}</p>
+                  </div>
+                ) : (
+                  <div className="max-h-[400px] overflow-y-auto">
+                    {messages.map((message, index) => (
+                      <div
+                        key={message.id || index}
+                        className={`border-b border-gray-800 p-4 ${
+                          index === 0 ? "bg-blue-950/20" : ""
+                        }`}
+                      >
+                        {/* 메시지 헤더 부분 */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center">
+                            <span className="bg-red-900 text-white text-xs px-2 py-0.5 rounded mr-2">
+                              {message.threat_actor || "Anzu Team"}
+                            </span>
+                          </div>
+                          <div className="flex items-center">
+                            <span className="text-gray-400 text-xs">
+                              조회수: {message.views}
+                            </span>
+                            <span className="text-gray-400 text-xs ml-3">
+                              전달: {message.forwards}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* 메시지 본문 */}
+                        <div className="mb-2">
+                          <p className="text-sm">
+                            새로운 위험 정보가 감지되었습니다. 자세한 내용은
+                            채널을 확인하세요.
+                          </p>
+
+                          {message.channel && (
+                            <div className="mt-2 text-xs text-blue-400 break-all">
+                              채널:{" "}
+                              <a
+                                href={message.channel}
+                                className="hover:underline"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                https://t.me/
+                                {extractChannelName(message.channel)}
+                              </a>
+                            </div>
+                          )}
+
+                          {/* 더보기 클릭 시 나타나는 상세 정보 */}
+                          {expandedMessages[message.id || index] && (
+                            <div className="mt-2 text-xs text-gray-400">
+                              <div>메시지ID: {message.messageId}</div>
+                              <div>날짜: {new Date().toISOString()}</div>
+                              <div>미디어: 없음</div>
+                              <div>ID: {message.uniqueId}</div>
+                              <div>원본: {message.content}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 더보기 버튼 */}
+                        {!expandedMessages[message.id || index] && (
+                          <div className="mt-2">
+                            <button
+                              className="text-xs text-gray-400"
+                              onClick={() => toggleExpand(message.id || index)}
+                            >
+                              더 보기...
+                            </button>
+                          </div>
+                        )}
+
+                        {/* 하단 액션 버튼 영역 */}
+                        <div className="flex mt-2 gap-2 text-xs text-gray-500">
+                          <button className="flex items-center">
+                            <Eye className="mr-1 h-3 w-3" />
+                            모니터링
+                          </button>
+                          <button className="flex items-center">
+                            <Shield className="mr-1 h-3 w-3" />
+                            차단
+                          </button>
+                          <button className="flex items-center">
+                            <MessageSquare className="mr-1 h-3 w-3" />
+                            답장
+                          </button>
+                          <button className="flex items-center">
+                            <ExternalLink className="mr-1 h-3 w-3" />
+                            채널 확인
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    </ThemeProvider>
+  );
+}
+
+export default App;
