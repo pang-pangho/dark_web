@@ -12,7 +12,8 @@ import { ThemeProvider } from "./components/theme-provider";
 import "./index.css";
 import TimeAgo from 'react-timeago';
 
-const SOCKET_URL = "http://localhost:4000"; // 서버 주소
+// const SOCKET_URL = "http://localhost:4000"; // 서버 주소
+  const SOCKET_URL ="https://dark-web-6squ.onrender.com"
 
 // 메시지 타입 정의
 type Message = {
