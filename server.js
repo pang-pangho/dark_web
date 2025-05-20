@@ -57,6 +57,7 @@ async function startServer() {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
     
+    
     server.listen(4000, () => console.log("Server running on port 4000"));
   } catch (err) {
     console.error("MongoDB connection failed:", err);
