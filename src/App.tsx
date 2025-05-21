@@ -12,10 +12,9 @@ import { ThemeProvider } from "./components/theme-provider";
 import "./index.css";
 import TimeAgo from 'react-timeago';
 
+ const SOCKET_URL ="https://dark-web-6squ.onrender.com"
 // const SOCKET_URL = "http://localhost:4000"; // 서버 주소
-  const SOCKET_URL ="https://dark-web-6squ.onrender.com"
 
-// 메시지 타입 정의
 type Message = {
   id: string;
   content: string;
@@ -36,6 +35,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [expandedMessages, setExpandedMessages] = useState<Record<string | number, boolean>>({});
   const [monitorActor, setMonitorActor] = useState<string | null>(null); // 모니터링 중인 행위공격자
+  const [blockedActors, setBlockedActors] = useState<string[]>([]); // 차단된 행위공격자 목록
 
   // 더보기 토글 함수
   const toggleExpand = (id: string | number) => {
@@ -140,15 +140,19 @@ function App() {
     }
   };
 
-  // 필터링된 메시지 목록
-  const filteredMessages = monitorActor
-    ? messages.filter((msg) => msg.threat_actor === monitorActor)
-    : messages;
-
   // 행위공격자 목록(중복제거)
   const actorList = Array.from(
     new Set(messages.map((msg) => msg.threat_actor))
   ).filter(Boolean);
+
+  // 메시지 필터링: 차단된 행위공격자 메시지는 항상 숨김
+  const filteredMessages = monitorActor
+    ? messages.filter(
+        (msg) =>
+          msg.threat_actor === monitorActor &&
+          !blockedActors.includes(msg.threat_actor)
+      )
+    : messages.filter((msg) => !blockedActors.includes(msg.threat_actor));
 
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
@@ -252,7 +256,7 @@ function App() {
                   </div>
                 </div>
 
-                {/* 행위공격자별 모니터링 버튼 목록 */}
+                {/* 행위공격자별 모니터링/차단 태그 */}
                 <div className="flex flex-wrap gap-2 p-4 border-b border-gray-800">
                   <button
                     className={`text-xs px-2 py-1 rounded ${
@@ -264,19 +268,33 @@ function App() {
                   >
                     전체 보기
                   </button>
-                  {actorList.map((actor) => (
-                    <button
-                      key={actor}
-                      className={`text-xs px-2 py-1 rounded ${
-                        monitorActor === actor
-                          ? "bg-blue-700 text-white"
-                          : "bg-gray-800 text-gray-300"
-                      }`}
-                      onClick={() => setMonitorActor(actor)}
-                    >
-                      {actor}
-                    </button>
-                  ))}
+                  {actorList.map((actor) => {
+                    const isBlocked = blockedActors.includes(actor);
+                    const isMonitored = monitorActor === actor;
+                    return (
+                      <button
+                        key={actor}
+                        className={`text-xs px-2 py-1 rounded ${
+                          isBlocked
+                            ? "bg-red-700 text-white"
+                            : isMonitored
+                              ? "bg-blue-700 text-white"
+                              : "bg-gray-800 text-gray-300"
+                        }`}
+                        onClick={() => {
+                          if (isBlocked) {
+                            // 차단 해제
+                            setBlockedActors(prev => prev.filter(a => a !== actor));
+                          } else {
+                            // 모니터링만 활성화
+                            setMonitorActor(actor);
+                          }
+                        }}
+                      >
+                        {actor}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {loading ? (
@@ -309,6 +327,7 @@ function App() {
                         {/* 메시지 본문 */}
                         <div className="mb-2">
                           <div>{message.content}</div>
+                          {/* 번역 버튼 및 결과 */}
 
                           {message.channel && (
                             <div className="mt-2 text-xs text-blue-400 break-all">
@@ -355,7 +374,16 @@ function App() {
                             <Eye className="mr-1 h-3 w-3" />
                             모니터링
                           </button>
-                          <button className="flex items-center">
+                          <button
+                            className="flex items-center"
+                            onClick={() =>
+                              setBlockedActors(prev =>
+                                prev.includes(message.threat_actor)
+                                  ? prev
+                                  : [...prev, message.threat_actor]
+                              )
+                            }
+                          >
                             <Shield className="mr-1 h-3 w-3" />
                             차단
                           </button>
