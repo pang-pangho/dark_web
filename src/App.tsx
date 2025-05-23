@@ -6,9 +6,7 @@ import {
   Clock,
   Eye,
   Shield,
-  Languages,
-  Settings,
-  X,
+
 } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { ThemeProvider } from "./components/theme-provider";
@@ -18,15 +16,7 @@ import TimeAgo from "react-timeago";
 const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 // const SOCKET_URL = "http://localhost:4000";
 
-// 카테고리 코드 → 한글명/타입명 매핑
-const CATEGORY_LABELS: Record<string, string> = {
-  SiteA_SingleDetailView: "data leak",
-  SiteB_CardListView: "abyss data",
-};
 
-function getCategoryLabel(code: string) {
-  return CATEGORY_LABELS[code] || code;
-}
 
 // 언어 감지 함수
 const detectLanguage = (text: string): string => {
@@ -104,25 +94,7 @@ function App() {
   const [darkwebError, setDarkwebError] = useState<string | null>(null);
   const [darkwebCategory, setDarkwebCategory] = useState<string | null>(null);
 
-  // 번역 관련 상태
-  const [autoTranslateSettings, setAutoTranslateSettings] = useState<{
-    enabled: boolean;
-    languages: Record<string, boolean>;
-  }>({
-    enabled: false,
-    languages: {
-      en: false,
-      ru: true,
-      de: true,
-      fr: true,
-      es: true,
-      it: true,
-      zh: true,
-      ja: false,
-      ko: false,
-    },
-  });
-  const [showSettings, setShowSettings] = useState(false);
+
 
   // 더보기 토글 함수
   const toggleExpand = (id: string | number) => {
@@ -278,78 +250,11 @@ function App() {
       ? darkwebItems.filter((item) => item.category === darkwebCategory)
       : darkwebItems;
 
-  // 번역 토글
-  const toggleTranslation = (id: string) => {
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) =>
-        msg.id === id
-          ? {
-              ...msg,
-              showTranslation: !msg.showTranslation,
-              isTranslated: true,
-              content: msg.showTranslation
-                ? msg.originalContent
-                : msg.translatedContent || "번역 결과 없음",
-            }
-          : msg
-      )
-    );
-  };
 
-  // 전체 번역
-  const translateAll = () => {
-    setMessages((prevMessages) =>
-      prevMessages.map((msg) => ({
-        ...msg,
-        showTranslation: true,
-        isTranslated: true,
-        content: msg.translatedContent || "번역 결과 없음",
-      }))
-    );
-  };
+
 
   // 자동 번역 적용
-  useEffect(() => {
-    if (autoTranslateSettings.enabled) {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) => {
-          if (
-            autoTranslateSettings.languages[msg.detectedLanguage || "unknown"] &&
-            msg.detectedLanguage !== "ko" &&
-            !msg.showTranslation
-          ) {
-            return {
-              ...msg,
-              content: msg.translatedContent || "번역 결과 없음",
-              showTranslation: true,
-              isTranslated: true,
-            };
-          }
-          return msg;
-        })
-      );
-    }
-  }, [autoTranslateSettings]);
-
-  // 자동 번역 설정 토글
-  const toggleAutoTranslate = () => {
-    setAutoTranslateSettings((prev) => ({
-      ...prev,
-      enabled: !prev.enabled,
-    }));
-  };
-
-  // 특정 언어 자동 번역 설정 토글
-  const toggleLanguageTranslate = (language: string) => {
-    setAutoTranslateSettings((prev) => ({
-      ...prev,
-      languages: {
-        ...prev.languages,
-        [language]: !prev.languages[language],
-      },
-    }));
-  };
-
+  
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
       
@@ -536,24 +441,7 @@ function App() {
                   <div className="flex items-center justify-between border-b border-gray-800 p-4">
                     <h3 className="text-xl font-bold">텔레그램 위험 정보</h3>
                     <div className="flex items-center gap-2">
-                      <button
-                        className="flex items-center text-sm text-blue-400 bg-blue-900/30 rounded px-2 py-1 hover:bg-blue-900/50"
-                        onClick={translateAll}
-                      >
-                        <Languages className="mr-1 h-4 w-4" />
-                        <span>전체 번역</span>
-                      </button>
-                      <button
-                        className={`flex items-center text-sm ${
-                          autoTranslateSettings.enabled
-                            ? "text-green-400 bg-green-900/30 hover:bg-green-900/50"
-                            : "text-gray-400 bg-gray-800 hover:bg-gray-700"
-                        } rounded px-2 py-1`}
-                        onClick={() => setShowSettings(true)}
-                      >
-                        <Settings className="mr-1 h-4 w-4" />
-                        <span>번역 설정</span>
-                      </button>
+                 
                       <div className="flex items-center text-sm text-gray-400">
                         <Clock className="mr-1 h-4 w-4" />
                         <span>실시간</span>
@@ -601,20 +489,7 @@ function App() {
                     })}
                   </div>
                   {/* 자동 번역 상태 표시 */}
-                  {autoTranslateSettings.enabled && (
-                    <div className="bg-green-900/20 border-b border-green-900/50 px-4 py-2 flex items-center justify-between">
-                      <div className="flex items-center text-green-400 text-sm">
-                        <Languages className="mr-2 h-4 w-4" />
-                        <span>자동 번역 활성화됨</span>
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {Object.entries(autoTranslateSettings.languages)
-                          .filter(([_, isEnabled]) => isEnabled)
-                          .map(([lang]) => languageNames[lang])
-                          .join(", ")}
-                      </div>
-                    </div>
-                  )}
+                 
                   {loading ? (
                     <div className="flex justify-center items-center h-[200px]">
                       <p className="text-gray-400">데이터 로딩 중...</p>
@@ -705,15 +580,7 @@ function App() {
                               <Eye className="mr-1 h-3 w-3" />
                               모니터링
                             </button>
-                            <button
-                              className={`flex items-center ${
-                                message.showTranslation ? "text-green-400" : ""
-                              }`}
-                              onClick={() => toggleTranslation(message.id)}
-                            >
-                              <Languages className="mr-1 h-3 w-3" />
-                              번역
-                            </button>
+                        
                             <button
                               className="flex items-center"
                               onClick={() =>
@@ -738,11 +605,7 @@ function App() {
           </div>
         </main>
         {/* 자동 번역 설정 모달 (생략) */}
-        {showSettings && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            {/* ...생략... */}
-          </div>
-        )}
+        
       </div>
     </ThemeProvider>
   );
