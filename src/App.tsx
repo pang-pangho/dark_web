@@ -6,17 +6,17 @@ import {
   Clock,
   Eye,
   Shield,
-
+  Bell,
+  MessageCircle,
+  X,
 } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { ThemeProvider } from "./components/theme-provider";
 import "./index.css";
 import TimeAgo from "react-timeago";
 
-const SOCKET_URL = "https://dark-web-6squ.onrender.com";
-// const SOCKET_URL = "http://localhost:4000";
-
-
+// 서버 주소
+const SOCKET_URL = "http://localhost:4000";
 
 // 언어 감지 함수
 const detectLanguage = (text: string): string => {
@@ -94,7 +94,55 @@ function App() {
   const [darkwebError, setDarkwebError] = useState<string | null>(null);
   const [darkwebCategory, setDarkwebCategory] = useState<string | null>(null);
 
+  // 알림받기 관련 상태
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [showIdInputModal, setShowIdInputModal] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<"telegram" | "discord" | null>(null);
+  const [platformId, setPlatformId] = useState("");
+  const [savedNotifications, setSavedNotifications] = useState<{ telegram?: string; discord?: string }>({});
+  const [subscribeStatus, setSubscribeStatus] = useState<string | null>(null);
 
+  // 알림받기 플랫폼 선택 함수
+  const selectPlatform = (platform: "telegram" | "discord") => {
+    setSelectedPlatform(platform);
+    setShowNotificationModal(false);
+    setShowIdInputModal(true);
+    setPlatformId(savedNotifications[platform] || "");
+    setSubscribeStatus(null);
+  };
+
+  // 알림받기 아이디 저장 및 서버 등록
+  const saveNotificationId = async () => {
+    if (selectedPlatform && platformId.trim()) {
+      try {
+        const res = await fetch(`${SOCKET_URL}/api/subscribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            platform: selectedPlatform,
+            id: platformId.trim(),
+          }),
+        });
+        if (res.ok) {
+          setSavedNotifications((prev) => ({
+            ...prev,
+            [selectedPlatform]: platformId.trim(),
+          }));
+          setSubscribeStatus("구독이 등록되었습니다!");
+        } else {
+          setSubscribeStatus("구독 등록에 실패했습니다.");
+        }
+      } catch {
+        setSubscribeStatus("서버 오류로 실패했습니다.");
+      }
+      setTimeout(() => {
+        setShowIdInputModal(false);
+        setSelectedPlatform(null);
+        setPlatformId("");
+        setSubscribeStatus(null);
+      }, 1200);
+    }
+  };
 
   // 더보기 토글 함수
   const toggleExpand = (id: string | number) => {
@@ -134,6 +182,7 @@ function App() {
     return () => {
       sock.disconnect();
     };
+    // eslint-disable-next-line
   }, []);
 
   // 다크웹 데이터 불러오기
@@ -250,20 +299,25 @@ function App() {
       ? darkwebItems.filter((item) => item.category === darkwebCategory)
       : darkwebItems;
 
-
-
-
-  // 자동 번역 적용
-  
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
-      
       <div className="flex min-h-screen flex-col bg-black text-white">
         <header className="border-b border-gray-800 p-4">
-          <h1 className="text-2xl font-bold">Untitle</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold">Untitle</h1>
+            {/* 알림받기 버튼 */}
+            <button
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              onClick={() => setShowNotificationModal(true)}
+            >
+              <Bell className="h-4 w-4" />
+              알림받기
+            </button>
+          </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {/* ... 기존 대시보드 카드 ... */}
             <Card className="bg-purple-900 border-none text-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -321,7 +375,6 @@ function App() {
               </CardContent>
             </Card>
           </div>
-
           <div className="grid gap-6 md:grid-cols-2">
             {/* 왼쪽: 다크웹 데이터 카드 */}
             <section>
@@ -364,7 +417,6 @@ function App() {
                   ) : darkwebError ? (
                     <div className="text-red-400">{darkwebError}</div>
                   ) : (
-                    // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ 내부 스크롤 적용 ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
                     <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
                         {filteredDarkwebItems.map((item) => (
@@ -429,7 +481,6 @@ function App() {
                         ))}
                       </div>
                     </div>
-                    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ 내부 스크롤 적용 ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
                   )}
                 </CardContent>
               </Card>
@@ -441,7 +492,6 @@ function App() {
                   <div className="flex items-center justify-between border-b border-gray-800 p-4">
                     <h3 className="text-xl font-bold">텔레그램 위험 정보</h3>
                     <div className="flex items-center gap-2">
-                 
                       <div className="flex items-center text-sm text-gray-400">
                         <Clock className="mr-1 h-4 w-4" />
                         <span>실시간</span>
@@ -488,8 +538,6 @@ function App() {
                       );
                     })}
                   </div>
-                  {/* 자동 번역 상태 표시 */}
-                 
                   {loading ? (
                     <div className="flex justify-center items-center h-[200px]">
                       <p className="text-gray-400">데이터 로딩 중...</p>
@@ -580,7 +628,6 @@ function App() {
                               <Eye className="mr-1 h-3 w-3" />
                               모니터링
                             </button>
-                        
                             <button
                               className="flex items-center"
                               onClick={() =>
@@ -604,8 +651,121 @@ function App() {
             </section>
           </div>
         </main>
-        {/* 자동 번역 설정 모달 (생략) */}
-        
+
+        {/* 알림받기 플랫폼 선택 모달 */}
+        {showNotificationModal && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold">알림받기 설정</h3>
+                <button className="text-gray-400 hover:text-white" onClick={() => setShowNotificationModal(false)}>
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="text-center mb-6">
+                <p className="text-gray-400 mb-4">알림을 받을 플랫폼을 선택해주세요</p>
+                <div className="flex justify-center gap-8">
+                  {/* 텔레그램 버튼 */}
+                  <button
+                    className="flex flex-col items-center gap-3 p-6 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group"
+                    onClick={() => selectPlatform("telegram")}
+                  >
+                    <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center group-hover:bg-blue-400 transition-colors">
+                      <MessageCircle className="h-8 w-8 text-white" />
+                    </div>
+                    <span className="text-white font-medium">텔레그램</span>
+                    {savedNotifications.telegram && <span className="text-xs text-green-400">✓ 설정됨</span>}
+                  </button>
+                  {/* 디스코드 버튼 */}
+                  <button
+                    className="flex flex-col items-center gap-3 p-6 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group"
+                    onClick={() => selectPlatform("discord")}
+                  >
+                    <div className="w-16 h-16 bg-indigo-500 rounded-full flex items-center justify-center group-hover:bg-indigo-400 transition-colors">
+                      <MessageCircle className="h-8 w-8 text-white" />
+                    </div>
+                    <span className="text-white font-medium">디스코드</span>
+                    {savedNotifications.discord && <span className="text-xs text-green-400">✓ 설정됨</span>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 아이디 입력 모달 */}
+        {showIdInputModal && selectedPlatform && (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold">
+                  {selectedPlatform === "telegram" ? "텔레그램" : "디스코드"} 아이디 입력
+                </h3>
+                <button
+                  className="text-gray-400 hover:text-white"
+                  onClick={() => {
+                    setShowIdInputModal(false);
+                    setSelectedPlatform(null);
+                    setPlatformId("");
+                  }}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div
+                    className={`w-12 h-12 ${selectedPlatform === "telegram" ? "bg-blue-500" : "bg-indigo-500"} rounded-full flex items-center justify-center`}
+                  >
+                    <MessageCircle className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium">{selectedPlatform === "telegram" ? "텔레그램" : "디스코드"}</h4>
+                    <p className="text-sm text-gray-400">
+                      {selectedPlatform === "telegram"
+                        ? "@username 또는 사용자 ID를 입력하세요"
+                        : "디스코드 Webhook URL을 입력하세요"}
+                    </p>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  value={platformId}
+                  onChange={(e) => setPlatformId(e.target.value)}
+                  placeholder={selectedPlatform === "telegram" ? "@username 또는 chat_id" : "Discord Webhook URL"}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  {selectedPlatform === "telegram"
+                    ? "예: @myusername 또는 123456789"
+                    : "예: https://discord.com/api/webhooks/xxx/yyy"}
+                </p>
+                {subscribeStatus && (
+                  <div className="text-center mt-3 text-green-400">{subscribeStatus}</div>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  onClick={() => {
+                    setShowIdInputModal(false);
+                    setSelectedPlatform(null);
+                    setPlatformId("");
+                  }}
+                >
+                  취소
+                </button>
+                <button
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={saveNotificationId}
+                  disabled={!platformId.trim()}
+                >
+                  저장
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ThemeProvider>
   );

@@ -6,6 +6,8 @@ import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch"; // npm install node-fetch
+import 'dotenv/config'; 
+const TELEGRAM_BOT_TOKEN =  process.env.TELEGRAM_BOT_TOKEN;
 
 const app = express();
 app.use(cors());
@@ -19,21 +21,83 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*" }
 });
+
 function isValidTitle(title) {
   return title && title !== "N/A" && title.trim() !== "";
 }
+
 const uri =
   "mongodb+srv://admin:admin@cluster0.li29uru.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 const client = new MongoClient(uri);
 
 let db;
+
+// --- 알림 발송 함수 ---
+async function sendTelegram(chatId, text) {
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+  } catch (e) {
+    console.error("텔레그램 알림 실패:", e);
+  }
+}
+
+async function sendDiscord(webhookUrl, content) {
+  try {
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+  } catch (e) {
+    console.error("디스코드 알림 실패:", e);
+  }
+}
+
+// --- 알림 구독자 등록/조회 API ---
+app.post("/api/subscribe", async (req, res) => {
+  const { platform, id } = req.body;
+  if (!platform || !id) return res.status(400).json({ error: "platform, id 필수" });
+  try {
+    const collection = db.collection("subscribe_data");
+    // 중복 방지: 같은 platform+id가 이미 있으면 무시
+    const exist = await collection.findOne({ platform, id });
+    if (!exist) await collection.insertOne({ platform, id, created_at: new Date() });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "DB 오류" });
+  }
+});
+app.get("/api/subscribe", async (req, res) => {
+  try {
+    const list = await db.collection("subscribe_data").find().toArray();
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: "DB 오류" });
+  }
+});
+
+// --- Change Stream에서 알림 발송 ---
 function getSiteCategory(siteName) {
   if (siteName === "SiteA_SingleDetailView") return "data leak";
   if (siteName === "SiteB_CardListView") return "abyss data";
-  // 기본값
   return "data leak";
 }
 
+async function notifyAllSubscribers(message) {
+  const subs = await db.collection("subscribe_data").find().toArray();
+  for (const sub of subs) {
+    if (sub.platform === "telegram") {
+      await sendTelegram(sub.id, message);
+    } else if (sub.platform === "discord") {
+      await sendDiscord(sub.id, message);
+    }
+  }
+}
 
 async function startServer() {
   try {
@@ -45,8 +109,32 @@ async function startServer() {
     const telegramCollection = db.collection("telegram_data");
     const telegramChangeStream = telegramCollection.watch();
 
-    telegramChangeStream.on("change", (change) => {
+    telegramChangeStream.on("change", async (change) => {
       io.emit("dataChanged", change);
+      if (change.operationType === "insert" && change.fullDocument) {
+        const doc = change.fullDocument;
+        const msg = `[텔레그램 위험정보]\n${doc.text || doc.title || "새 메시지"}\n채널: ${doc.channel || ""}`;
+        console.log('Change Stream 이벤트', change)
+        await notifyAllSubscribers(msg);
+      }
+    });
+
+    // 다크웹 Change Stream 세팅 (여기서 db가 초기화된 이후에 선언!)
+    const darkwebCollection = db.collection("darkweb_data");
+    const darkwebChangeStream = darkwebCollection.watch();
+
+    darkwebChangeStream.on("change", async (change) => {
+      if (change.operationType === "insert" && change.fullDocument) {
+        const doc = change.fullDocument;
+        let msg = `[다크웹 데이터]\n`;
+        if (doc.title) msg += `제목: ${doc.title}\n`;
+        if (doc.detail_page_extracted_title) msg += `제목: ${doc.detail_page_extracted_title}\n`;
+        if (doc.site_name) msg += `사이트: ${doc.site_name}\n`;
+        if (doc.url_used) msg += `URL: ${doc.url_used}\n`;
+        msg += `카테고리: ${getSiteCategory(doc.site_name)}\n`;
+        console.log('Change Stream 이벤트', change)
+        await notifyAllSubscribers(msg);
+      }
     });
 
     // 텔레그램 메시지 API
@@ -85,7 +173,6 @@ async function startServer() {
                 url: item.url_used,
                 site: item.site_name,
                 category: getSiteCategory(item.site_name),
-
                 verified: item.verified,
                 count: item.count
               });
@@ -103,7 +190,7 @@ async function startServer() {
               date: item.retrieved_at || "",
               url: item.detail_page_url,
               site: item.site_name,
-              category: item.site_name || item.category || "data leak",
+              category: item.site_name || item.category || "data leak market",
               verified: item.verified,
               count: item.count
             });
