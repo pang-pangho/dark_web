@@ -5,7 +5,7 @@ import { Server } from "socket.io";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
-import fetch from "node-fetch"; // npm install node-fetch
+import fetch from "node-fetch";
 import 'dotenv/config'; 
 const TELEGRAM_BOT_TOKEN =  process.env.TELEGRAM_BOT_TOKEN;
 
@@ -64,7 +64,6 @@ app.post("/api/subscribe", async (req, res) => {
   if (!platform || !id) return res.status(400).json({ error: "platform, id 필수" });
   try {
     const collection = db.collection("subscribe_data");
-    // 중복 방지: 같은 platform+id가 이미 있으면 무시
     const exist = await collection.findOne({ platform, id });
     if (!exist) await collection.insertOne({ platform, id, created_at: new Date() });
     res.json({ ok: true });
@@ -78,6 +77,133 @@ app.get("/api/subscribe", async (req, res) => {
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: "DB 오류" });
+  }
+});
+
+// --- 대시보드 지표 API (UTC 기준) ---
+app.get("/api/dashboard-stats", async (req, res) => {
+  try {
+    // 전체 감지된 위협: 다크웹 + 텔레그램 전체 count
+    const darkwebCount = await db.collection("darkweb_data").countDocuments();
+    const telegramCount = await db.collection("telegram_data").countDocuments();
+    const totalThreats = darkwebCount + telegramCount;
+
+    // 오늘/어제 UTC 00:00:00 ~ 23:59:59
+    const now = new Date();
+    const yyyy = now.getUTCFullYear();
+    const mm = now.getUTCMonth();
+    const dd = now.getUTCDate();
+
+    const startOfTodayUTC = new Date(Date.UTC(yyyy, mm, dd, 0, 0, 0));
+    const endOfTodayUTC = new Date(Date.UTC(yyyy, mm, dd, 23, 59, 59));
+
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yyyyY = yesterday.getUTCFullYear();
+    const mmY = yesterday.getUTCMonth();
+    const ddY = yesterday.getUTCDate();
+    const startOfYesterdayUTC = new Date(Date.UTC(yyyyY, mmY, ddY, 0, 0, 0));
+    const endOfYesterdayUTC = new Date(Date.UTC(yyyyY, mmY, ddY, 23, 59, 59));
+
+    // 다크웹: Date 타입이므로 기존 방식
+    const darkwebToday = await db.collection("darkweb_data").countDocuments({
+      retrieved_at: { $gte: startOfTodayUTC, $lte: endOfTodayUTC }
+    });
+    const darkwebYesterday = await db.collection("darkweb_data").countDocuments({
+      retrieved_at: { $gte: startOfYesterdayUTC, $lte: endOfYesterdayUTC }
+    });
+
+    // 텔레그램: date 필드가 문자열일 수도 있으니, aggregation으로 변환해서 카운트
+    const telegramTodayArr = await db.collection("telegram_data").aggregate([
+      {
+        $addFields: {
+          dateAsDate: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: [{ $type: "$date" }, "date"] },
+                  then: "$date"
+                },
+                {
+                  case: { $eq: [{ $type: "$date" }, "string"] },
+                  then: {
+                    $dateFromString: {
+                      dateString: "$date",
+                      onError: null,
+                      onNull: null
+                    }
+                  }
+                }
+              ],
+              default: null
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          dateAsDate: { $gte: startOfTodayUTC, $lte: endOfTodayUTC }
+        }
+      },
+      { $count: "count" }
+    ]).toArray();
+    const telegramToday = telegramTodayArr.length > 0 ? telegramTodayArr[0].count : 0;
+
+    const telegramYesterdayArr = await db.collection("telegram_data").aggregate([
+      {
+        $addFields: {
+          dateAsDate: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: [{ $type: "$date" }, "date"] },
+                  then: "$date"
+                },
+                {
+                  case: { $eq: [{ $type: "$date" }, "string"] },
+                  then: {
+                    $dateFromString: {
+                      dateString: "$date",
+                      onError: null,
+                      onNull: null
+                    }
+                  }
+                }
+              ],
+              default: null
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          dateAsDate: { $gte: startOfYesterdayUTC, $lte: endOfYesterdayUTC }
+        }
+      },
+      { $count: "count" }
+    ]).toArray();
+    const telegramYesterday = telegramYesterdayArr.length > 0 ? telegramYesterdayArr[0].count : 0;
+
+    const todayThreats = darkwebToday + telegramToday;
+    const yesterdayThreats = darkwebYesterday + telegramYesterday;
+
+    // 모니터링 채널: 다크웹 카테고리 수 + 텔레그램 위험정보 그룹(채널) 수
+    const darkwebCategories = await db.collection("darkweb_data").distinct("category");
+    const telegramGroups = await db.collection("telegram_data").distinct("channel");
+    const monitoringChannels = darkwebCategories.length + telegramGroups.length;
+
+    // 구독 채널: subscribe_data 전체 count
+    const subscribeCount = await db.collection("subscribe_data").countDocuments();
+
+    res.json({
+      totalThreats,
+      todayThreats,
+      yesterdayThreats,
+      monitoringChannels,
+      subscribeCount
+    });
+  } catch (e) {
+    console.error("대시보드 지표 API 오류:", e);
+    res.status(500).json({ error: "대시보드 지표 조회 실패" });
   }
 });
 
@@ -119,7 +245,7 @@ async function startServer() {
       }
     });
 
-    // 다크웹 Change Stream 세팅 (여기서 db가 초기화된 이후에 선언!)
+    // 다크웹 Change Stream 세팅
     const darkwebCollection = db.collection("darkweb_data");
     const darkwebChangeStream = darkwebCollection.watch();
 
@@ -160,7 +286,6 @@ async function startServer() {
         // 정규화
         const normalized = [];
         for (const item of items) {
-          // 1. extracted_data 배열이 있으면 배열의 각 항목을 카드로
           if (Array.isArray(item.extracted_data)) {
             for (const [idx, ex] of item.extracted_data.entries()) {
               normalized.push({
@@ -178,7 +303,6 @@ async function startServer() {
               });
             }
           }
-          // 2. detail_page_extracted_title/content가 있으면 그것도 카드로
           if (item.detail_page_extracted_title &&
             isValidTitle(item.detail_page_extracted_title)) {
             normalized.push({
@@ -195,7 +319,6 @@ async function startServer() {
               count: item.count
             });
           }
-          // 3. title/content가 있으면 그대로
           if (item.title) {
             normalized.push({
               _id: item._id?.toString
@@ -211,7 +334,6 @@ async function startServer() {
               count: item.count
             });
           }
-          // 4. title_on_list/summary_on_list (배열 아닌 경우)
           if (item.title_on_list) {
             normalized.push({
               _id: item._id?.toString

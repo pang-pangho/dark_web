@@ -15,11 +15,9 @@ import { ThemeProvider } from "./components/theme-provider";
 import "./index.css";
 import TimeAgo from "react-timeago";
 
-// 서버 주소
 // const SOCKET_URL = "http://localhost:4000";
 const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 
-// 언어 감지 함수
 const detectLanguage = (text: string): string => {
   const langPatterns = {
     en: /\b(the|is|are|and|or|but|in|on|at|to|for|with|by|of|from)\b/i,
@@ -89,11 +87,19 @@ function App() {
   const [expandedMessages, setExpandedMessages] = useState<Record<string | number, boolean>>({});
   const [monitorActor, setMonitorActor] = useState<string | null>(null);
   const [blockedActors, setBlockedActors] = useState<string[]>([]);
-  // 다크웹 데이터 상태
   const [darkwebItems, setDarkwebItems] = useState<DarkwebItem[]>([]);
   const [darkwebLoading, setDarkwebLoading] = useState(true);
   const [darkwebError, setDarkwebError] = useState<string | null>(null);
   const [darkwebCategory, setDarkwebCategory] = useState<string | null>(null);
+
+  // 대시보드 지표 상태
+  const [dashboardStats, setDashboardStats] = useState<{
+    totalThreats: number;
+    todayThreats: number;
+    yesterdayThreats: number;
+    monitoringChannels: number;
+    subscribeCount: number;
+  } | null>(null);
 
   // 알림받기 관련 상태
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -102,6 +108,43 @@ function App() {
   const [platformId, setPlatformId] = useState("");
   const [savedNotifications, setSavedNotifications] = useState<{ telegram?: string; discord?: string }>({});
   const [subscribeStatus, setSubscribeStatus] = useState<string | null>(null);
+
+  // --- 증감률 계산 함수 ---
+  function getChangeRate(today: number, yesterday: number): {rate: number, up: boolean} {
+    if (yesterday === 0) {
+      if (today === 0) return { rate: 0, up: false };
+      return { rate: 100, up: true };
+    }
+    const rate = ((today - yesterday) / yesterday) * 100;
+    return { rate: Math.abs(rate), up: rate >= 0 };
+  }
+
+  // 대시보드 지표 fetch 함수
+  const fetchDashboardStats = () => {
+    fetch(`${SOCKET_URL}/api/dashboard-stats`)
+      .then((res) => res.json())
+      .then(setDashboardStats)
+      .catch(() => setDashboardStats(null));
+  };
+
+  // 최초 mount 시 한 번 fetch
+  useEffect(() => {
+    fetchDashboardStats();
+  }, []);
+
+  // 소켓 연결 및 실시간 대시보드 갱신
+  useEffect(() => {
+    const sock = io(SOCKET_URL);
+
+    // 데이터가 바뀔 때마다 대시보드 지표 다시 fetch
+    sock.on("dataChanged", () => {
+      fetchDashboardStats();
+    });
+
+    return () => {
+      sock.disconnect();
+    };
+  }, []);
 
   // 알림받기 플랫폼 선택 함수
   const selectPlatform = (platform: "telegram" | "discord") => {
@@ -112,7 +155,7 @@ function App() {
     setSubscribeStatus(null);
   };
 
-  // 알림받기 아이디 저장 및 서버 등록
+  // 알림받기 아이디 저장 및 서버 등록 (구독 성공 후 대시보드 갱신)
   const saveNotificationId = async () => {
     if (selectedPlatform && platformId.trim()) {
       try {
@@ -130,6 +173,8 @@ function App() {
             [selectedPlatform]: platformId.trim(),
           }));
           setSubscribeStatus("구독이 등록되었습니다!");
+          // 구독 성공 후 대시보드 지표 다시 fetch
+          fetchDashboardStats();
         } else {
           setSubscribeStatus("구독 등록에 실패했습니다.");
         }
@@ -183,7 +228,6 @@ function App() {
     return () => {
       sock.disconnect();
     };
-    // eslint-disable-next-line
   }, []);
 
   // 다크웹 데이터 불러오기
@@ -238,7 +282,6 @@ function App() {
     };
   }
 
-  // 날짜 포맷팅 함수
   const formatDate = (dateString: string): string => {
     try {
       const date = new Date(dateString);
@@ -275,12 +318,10 @@ function App() {
     }
   };
 
-  // 행위공격자 목록(중복제거)
   const actorList = Array.from(
     new Set(messages.map((msg) => msg.threat_actor))
   ).filter(Boolean);
 
-  // 메시지 필터링: 차단된 행위공격자 메시지는 항상 숨김
   const filteredMessages = monitorActor
     ? messages.filter(
         (msg) =>
@@ -289,12 +330,10 @@ function App() {
       )
     : messages.filter((msg) => !blockedActors.includes(msg.threat_actor));
 
-  // 다크웹 카테고리 목록 추출
   const darkwebCategories = Array.from(
     new Set(darkwebItems.map((item) => item.category))
   ).filter(Boolean);
 
-  // 카테고리별 필터링
   const filteredDarkwebItems =
     darkwebCategory && darkwebCategory !== "전체 보기"
       ? darkwebItems.filter((item) => item.category === darkwebCategory)
@@ -306,7 +345,6 @@ function App() {
         <header className="border-b border-gray-800 p-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold">Untitle</h1>
-            {/* 알림받기 버튼 */}
             <button
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
               onClick={() => setShowNotificationModal(true)}
@@ -318,32 +356,45 @@ function App() {
         </header>
         <main className="flex-1 p-4 md:p-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {/* ... 기존 대시보드 카드 ... */}
+            {/* 전체 감지된 위협 */}
             <Card className="bg-purple-900 border-none text-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium opacity-70">감지된 위협</p>
-                    <h2 className="text-3xl font-bold">12.7K</h2>
+                    <p className="text-sm font-medium opacity-70">전체 감지된 위협</p>
+                    <h2 className="text-3xl font-bold">
+                      {dashboardStats ? dashboardStats.totalThreats.toLocaleString() : "로딩..."}
+                    </h2>
                   </div>
-                  <div className="flex items-center text-green-400">
-                    <ArrowUp className="h-4 w-4 mr-1" />
-                    <span className="text-xs">+16%</span>
-                  </div>
+                  {dashboardStats && (
+                    <div className={`flex items-center ${getChangeRate(dashboardStats.totalThreats, dashboardStats.totalThreats - dashboardStats.todayThreats).up ? "text-green-400" : "text-red-400"}`}>
+                      {getChangeRate(dashboardStats.totalThreats, dashboardStats.totalThreats - dashboardStats.todayThreats).up ? <ArrowUp className="h-4 w-4 mr-1" /> : <ArrowDown className="h-4 w-4 mr-1" />}
+                      <span className="text-xs">
+                        {getChangeRate(dashboardStats.totalThreats, dashboardStats.totalThreats - dashboardStats.todayThreats).rate.toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
+            {/* 금일 감지된 위협 */}
             <Card className="bg-purple-700 border-none text-white">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium opacity-70">위험 지수</p>
-                    <h2 className="text-3xl font-bold">38%</h2>
+                    <p className="text-sm font-medium opacity-70">금일 감지된 위협</p>
+                    <h2 className="text-3xl font-bold">
+                      {dashboardStats ? dashboardStats.todayThreats.toLocaleString() : "로딩..."}
+                    </h2>
                   </div>
-                  <div className="flex items-center text-red-400">
-                    <ArrowDown className="h-4 w-4 mr-1" />
-                    <span className="text-xs">-4%</span>
-                  </div>
+                  {dashboardStats && (
+                    <div className={`flex items-center ${getChangeRate(dashboardStats.todayThreats, dashboardStats.yesterdayThreats).up ? "text-green-400" : "text-red-400"}`}>
+                      {getChangeRate(dashboardStats.todayThreats, dashboardStats.yesterdayThreats).up ? <ArrowUp className="h-4 w-4 mr-1" /> : <ArrowDown className="h-4 w-4 mr-1" />}
+                      <span className="text-xs">
+                        {getChangeRate(dashboardStats.todayThreats, dashboardStats.yesterdayThreats).rate.toFixed(1)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -352,11 +403,9 @@ function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium opacity-70">모니터링 채널</p>
-                    <h2 className="text-3xl font-bold">73</h2>
-                  </div>
-                  <div className="flex items-center text-green-400">
-                    <ArrowUp className="h-4 w-4 mr-1" />
-                    <span className="text-xs">+5</span>
+                    <h2 className="text-3xl font-bold">
+                      {dashboardStats ? dashboardStats.monitoringChannels.toLocaleString() : "로딩..."}
+                    </h2>
                   </div>
                 </div>
               </CardContent>
@@ -365,12 +414,10 @@ function App() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium opacity-70">데이터 포인트</p>
-                    <h2 className="text-3xl font-bold">9M</h2>
-                  </div>
-                  <div className="flex items-center text-green-400">
-                    <ArrowUp className="h-4 w-4 mr-1" />
-                    <span className="text-xs">+23%</span>
+                    <p className="text-sm font-medium opacity-70">구독 채널</p>
+                    <h2 className="text-3xl font-bold">
+                      {dashboardStats ? dashboardStats.subscribeCount.toLocaleString() : "로딩..."}
+                    </h2>
                   </div>
                 </div>
               </CardContent>
@@ -652,8 +699,7 @@ function App() {
             </section>
           </div>
         </main>
-
-        {/* 알림받기 플랫폼 선택 모달 */}
+        {/* 이하 알림 모달 등 기존 코드 동일 */}
         {showNotificationModal && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6">
@@ -693,7 +739,6 @@ function App() {
             </div>
           </div>
         )}
-
         {/* 아이디 입력 모달 */}
         {showIdInputModal && selectedPlatform && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
