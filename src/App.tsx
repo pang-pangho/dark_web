@@ -16,7 +16,8 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 
 // 서버 주소
-const SOCKET_URL = "http://localhost:4000";
+// const SOCKET_URL = "http://localhost:4000";
+const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 
 // 언어 감지 함수
 const detectLanguage = (text: string): string => {
