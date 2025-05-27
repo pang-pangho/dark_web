@@ -79,6 +79,211 @@ app.get("/api/subscribe", async (req, res) => {
     res.status(500).json({ error: "DB 오류" });
   }
 });
+// 실제 최근 7일간 일별 통계 API 추가
+// /api/daily-stats 엔드포인트 수정
+app.get("/api/daily-stats", async (req, res) => {
+  try {
+    const now = new Date();
+    const dailyStats = [];
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - i);
+      date.setUTCHours(0, 0, 0, 0);
+      
+      const nextDay = new Date(date);
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      
+      // 해당 날짜의 다크웹 데이터 개수
+      const darkwebCount = await db.collection("darkweb_data").countDocuments({
+        retrieved_at: { $gte: date, $lt: nextDay }
+      });
+      
+      // 해당 날짜의 텔레그램 데이터 개수
+      const telegramCountArr = await db.collection("telegram_data").aggregate([
+        {
+          $addFields: {
+            dateAsDate: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: [{ $type: "$date" }, "date"] },
+                    then: "$date"
+                  },
+                  {
+                    case: { $eq: [{ $type: "$date" }, "string"] },
+                    then: {
+                      $dateFromString: {
+                        dateString: "$date",
+                        onError: null,
+                        onNull: null
+                      }
+                    }
+                  }
+                ],
+                default: null
+              }
+            }
+          }
+        },
+        {
+          $match: {
+            dateAsDate: { $gte: date, $lt: nextDay }
+          }
+        },
+        { $count: "count" }
+      ]).toArray();
+      
+      const telegramCount = telegramCountArr.length > 0 ? telegramCountArr[0].count : 0;
+      
+      // 전체 위협은 누적 계산 (이전 날짜들의 합계)
+      const totalThreatsToDate = await calculateTotalThreatsToDate(date);
+      
+      dailyStats.push({
+        date: date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }),
+        fullDate: date.toISOString().split('T')[0],
+        totalThreats: totalThreatsToDate, // 누적 전체 위협
+        todayThreats: telegramCount + darkwebCount, // 당일 새로 감지된 위협
+        darkwebCount: darkwebCount,
+        telegramCount: telegramCount,
+        dayOfWeek: date.toLocaleDateString("ko-KR", { weekday: "short" })
+      });
+    }
+    
+    res.json(dailyStats);
+  } catch (error) {
+    console.error('일별 통계 조회 오류:', error);
+    res.status(500).json({ error: '통계 데이터를 가져올 수 없습니다.' });
+  }
+});
+
+// 특정 날짜까지의 누적 위협 계산 함수
+async function calculateTotalThreatsToDate(targetDate) {
+  try {
+    // 해당 날짜까지의 모든 다크웹 데이터
+    const totalDarkweb = await db.collection("darkweb_data").countDocuments({
+      retrieved_at: { $lte: targetDate }
+    });
+    
+    // 해당 날짜까지의 모든 텔레그램 데이터
+    const totalTelegramArr = await db.collection("telegram_data").aggregate([
+      {
+        $addFields: {
+          dateAsDate: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: [{ $type: "$date" }, "date"] },
+                  then: "$date"
+                },
+                {
+                  case: { $eq: [{ $type: "$date" }, "string"] },
+                  then: {
+                    $dateFromString: {
+                      dateString: "$date",
+                      onError: null,
+                      onNull: null
+                    }
+                  }
+                }
+              ],
+              default: null
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          dateAsDate: { $lte: targetDate }
+        }
+      },
+      { $count: "count" }
+    ]).toArray();
+    
+    const totalTelegram = totalTelegramArr.length > 0 ? totalTelegramArr[0].count : 0;
+    
+    return totalDarkweb + totalTelegram;
+  } catch (error) {
+    console.error('누적 위협 계산 오류:', error);
+    return 0;
+  }
+}
+
+// 시간대별 통계 API (추가)
+app.get("/api/hourly-stats", async (req, res) => {
+  try {
+    const { date } = req.query; // YYYY-MM-DD 형식
+    const targetDate = date ? new Date(date) : new Date();
+    targetDate.setUTCHours(0, 0, 0, 0);
+    
+    const nextDay = new Date(targetDate);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    
+    const hourlyStats = [];
+    
+    for (let hour = 0; hour < 24; hour++) {
+      const hourStart = new Date(targetDate);
+      hourStart.setUTCHours(hour, 0, 0, 0);
+      
+      const hourEnd = new Date(targetDate);
+      hourEnd.setUTCHours(hour, 59, 59, 999);
+      
+      // 해당 시간대의 데이터 개수
+      const darkwebCount = await db.collection("darkweb_data").countDocuments({
+        retrieved_at: { $gte: hourStart, $lte: hourEnd }
+      });
+      
+      const telegramCountArr = await db.collection("telegram_data").aggregate([
+        {
+          $addFields: {
+            dateAsDate: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: [{ $type: "$date" }, "date"] },
+                    then: "$date"
+                  },
+                  {
+                    case: { $eq: [{ $type: "$date" }, "string"] },
+                    then: {
+                      $dateFromString: {
+                        dateString: "$date",
+                        onError: null,
+                        onNull: null
+                      }
+                    }
+                  }
+                ],
+                default: null
+              }
+            }
+          }
+        },
+        {
+          $match: {
+            dateAsDate: { $gte: hourStart, $lte: hourEnd }
+          }
+        },
+        { $count: "count" }
+      ]).toArray();
+      
+      const telegramCount = telegramCountArr.length > 0 ? telegramCountArr[0].count : 0;
+      
+      hourlyStats.push({
+        hour: hour,
+        timeLabel: `${hour.toString().padStart(2, '0')}:00`,
+        totalThreats: darkwebCount + telegramCount,
+        darkwebCount: darkwebCount,
+        telegramCount: telegramCount
+      });
+    }
+    
+    res.json(hourlyStats);
+  } catch (error) {
+    console.error('시간대별 통계 조회 오류:', error);
+    res.status(500).json({ error: '시간대별 통계를 가져올 수 없습니다.' });
+  }
+});
 
 // --- 대시보드 지표 API (UTC 기준) ---
 app.get("/api/dashboard-stats", async (req, res) => {

@@ -1,4 +1,4 @@
-import  { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import io from "socket.io-client";
 import {
   ArrowUp,
@@ -21,8 +21,7 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 import WordCloud from "react-d3-cloud";
 
-// const SOCKET_URL = "http://localhost:4000";
-const SOCKET_URL = "https://dark-web-6squ.onrender.com";
+const SOCKET_URL = "http://localhost:4000";
 
 const detectLanguage = (text: string): string => {
   const langPatterns = {
@@ -90,9 +89,10 @@ type ChartData = {
   date: string;
   totalThreats: number;
   todayThreats: number;
+  darkwebCount?: number;
+  telegramCount?: number;
 };
 
-// react-d3-cloud용 타입 수정
 type WordCloudWord = {
   text: string;
   value: number;
@@ -110,7 +110,6 @@ function App() {
   const [darkwebError, setDarkwebError] = useState<string | null>(null);
   const [darkwebCategory, setDarkwebCategory] = useState<string | null>(null);
 
-  // 대시보드 지표 상태
   const [dashboardStats, setDashboardStats] = useState<{
     totalThreats: number;
     todayThreats: number;
@@ -119,12 +118,10 @@ function App() {
     subscribeCount: number;
   } | null>(null);
 
-  // 차트 상태
   const [showChart, setShowChart] = useState(false);
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
-  // 알림받기 관련 상태
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showIdInputModal, setShowIdInputModal] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<"telegram" | "discord" | null>(null);
@@ -132,11 +129,12 @@ function App() {
   const [savedNotifications, setSavedNotifications] = useState<{ telegram?: string; discord?: string }>({});
   const [subscribeStatus, setSubscribeStatus] = useState<string | null>(null);
 
-  // 테마 상태
   const [isDarkMode, setIsDarkMode] = useState(true);
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
 
-  // --- 증감률 계산 함수 ---
+  const [showWordCloud, setShowWordCloud] = useState(false);
+  const [selectedActor, setSelectedActor] = useState<string | null>(null);
+
   function getChangeRate(today: number, yesterday: number): { rate: number; up: boolean } {
     if (yesterday === 0) {
       if (today === 0) return { rate: 0, up: false };
@@ -146,7 +144,6 @@ function App() {
     return { rate: Math.abs(rate), up: rate >= 0 };
   }
 
-  // 대시보드 지표 fetch 함수
   const fetchDashboardStats = () => {
     fetch(`${SOCKET_URL}/api/dashboard-stats`)
       .then((res) => res.json())
@@ -154,15 +151,52 @@ function App() {
       .catch(() => setDashboardStats(null));
   };
 
-  // 최초 mount 시 한 번 fetch
+  // 실제 차트 데이터 fetch 함수
+  const fetchRealChartData = async () => {
+    try {
+      setChartLoading(true);
+      const response = await fetch(`${SOCKET_URL}/api/daily-stats`);
+      
+      if (!response.ok) {
+        throw new Error('서버 응답 오류');
+      }
+      
+      const realData = await response.json();
+      
+      // API 응답 데이터를 차트 형식에 맞게 변환
+      const chartFormattedData = realData.map((item: any) => ({
+        date: item.date,
+        totalThreats: item.totalThreats, // 누적 전체 위협
+        todayThreats: item.todayThreats, // 당일 새로 감지된 위협
+        darkwebCount: item.darkwebCount || 0,
+        telegramCount: item.telegramCount || 0
+      }));
+      
+      console.log('차트 데이터:', chartFormattedData);
+      setChartData(chartFormattedData);
+    } catch (error) {
+      console.error('차트 데이터 로딩 실패:', error);
+      setChartData([]);
+    } finally {
+      setChartLoading(false);
+    }
+  };
+
+  const toggleChart = () => {
+    if (!showChart) {
+      fetchRealChartData();
+    }
+    setShowChart(!showChart);
+  };
+
   useEffect(() => {
     const sock = io(SOCKET_URL);
     
-    // 대시보드 데이터 변경 감지
     sock.on("dataChanged", (change) => {
       fetchDashboardStats();
-      
-      // 새 메시지 추가 (중복 방지)
+      if (showChart) {
+        fetchRealChartData();
+      }
       if (change?.operationType === "insert" && change?.fullDocument) {
         setMessages((prev) => {
           const exists = prev.some(msg => msg.id === change.fullDocument._id);
@@ -171,15 +205,15 @@ function App() {
         });
       }
     });
+
+    fetchDashboardStats();
+    fetchRealChartData();
   
     return () => {
       sock.disconnect();
     };
-  }, []);
+  }, [showChart]);
 
-  
-
-  // 알림받기 플랫폼 선택 함수
   const selectPlatform = (platform: "telegram" | "discord") => {
     setSelectedPlatform(platform);
     setShowNotificationModal(false);
@@ -188,7 +222,6 @@ function App() {
     setSubscribeStatus(null);
   };
 
-  // 알림받기 아이디 저장 및 서버 등록 (구독 성공 후 대시보드 갱신)
   const saveNotificationId = async () => {
     if (selectedPlatform && platformId.trim()) {
       try {
@@ -222,7 +255,6 @@ function App() {
     }
   };
 
-  // 더보기 토글 함수
   const toggleExpand = (id: string | number) => {
     setExpandedMessages((prev) => ({
       ...prev,
@@ -230,9 +262,7 @@ function App() {
     }));
   };
 
-  // 텔레그램 메시지 불러오기
   useEffect(() => {
-    // 텔레그램 메시지 불러오기
     fetch(`${SOCKET_URL}/api/messages`)
       .then((response) => {
         if (!response.ok) throw new Error("서버 응답 오류");
@@ -247,7 +277,6 @@ function App() {
         setLoading(false);
       });
   
-    // 다크웹 데이터 불러오기
     fetch(`${SOCKET_URL}/api/darkweb`)
       .then((response) => {
         if (!response.ok) throw new Error("서버 응답 오류");
@@ -261,9 +290,8 @@ function App() {
         setDarkwebError("다크웹 데이터를 불러오는데 실패했습니다");
         setDarkwebLoading(false);
       });
-  }, []); // 한 번만 실행
+  }, []);
 
-  // 메시지 포맷터
   const formatMessages = (data: any[]): Message[] => data.map(formatSingleMessage);
 
   function formatSingleMessage(item: any): Message {
@@ -345,7 +373,6 @@ function App() {
       ? darkwebItems.filter((item) => item.category === darkwebCategory)
       : darkwebItems;
 
-  // 카드, 배경, 텍스트 색상 등 다크/라이트 분기
   const bgMain = isDarkMode ? "bg-black text-white" : "bg-gray-50 text-gray-900";
   const borderHeader = isDarkMode ? "border-gray-800 bg-black" : "border-gray-200 bg-white";
   const card1 = isDarkMode ? "bg-purple-900 border-none text-white" : "bg-purple-600 border-none text-white";
@@ -359,18 +386,14 @@ function App() {
   const textSub = isDarkMode ? "text-gray-400" : "text-gray-600";
   const textMain = isDarkMode ? "text-white" : "text-gray-900";
 
-  // --- 워드클라우드 동적 분석 함수 (react-d3-cloud용으로 수정) ---
   function extractKeywords(messages: Message[], maxWords = 20): WordCloudWord[] {
-    // 불용어(한글, 영어, 숫자, 특수문자 등)
     const stopwords = new Set([
       "the","is","are","and","or","but","in","on","at","to","for","with","by","of","from",
       "a","an","it","this","that","i","you","he","she","we","they","me","my","your","our",
       "가","이","은","는","을","를","에","의","도","로","과","와","에서","하다","있다","및","등","수","것","들","한","또한","또는","까지","부터","보다","다","고",
       "https", "http", "www", "com", "org", "net", "io", "co", "kr", "me", "ru", "de", "fr", "es", "it", "jp", "cn",
-    "click", "here", "more", "info", "new", "get", "now", "free", "join", "today","ad","will",
-    "hello", "hi", "hey", "okay", "ok", "lol", "lmao", "yo", "sup", "bro", "yo", "fr", "irl", "pls", "dm", "pm", "lmk", "wsg", "wtf", "idk", "bruh", "cb", "nah", "ikr"
-,"com", "net", "org", "io", "me", "ru", "cn", "de", "fr", "co", "gg", "to", "sx", "link", "url", "site"
-
+      "click", "here", "more", "info", "new", "get", "now", "free", "join", "today","ad","will",
+      "hello", "hi", "hey", "okay", "ok", "lol", "lmao", "yo", "sup", "bro", "yo", "fr", "irl", "pls", "dm", "pm", "lmk", "wsg", "wtf", "idk", "bruh", "cb", "nah", "ikr"
     ]);
     const freq: Record<string, number> = {};
     for (const msg of messages) {
@@ -380,8 +403,8 @@ function App() {
         .split(/\s+/);
       for (const w of words) {
         if (!w || stopwords.has(w) || w.length < 2) continue;
-        if (/^[0-9a-f]{6,}$/.test(w)) continue; // 해시 제외
-        if (/^\d+$/.test(w)) continue; // 숫자 제외
+        if (/^[0-9a-f]{6,}$/.test(w)) continue;
+        if (/^\d+$/.test(w)) continue;
         freq[w] = (freq[w] || 0) + 1;
       }
     }
@@ -396,11 +419,6 @@ function App() {
     return result;
   }
 
-  // 워드클라우드 모달 상태
-  const [showWordCloud, setShowWordCloud] = useState(false);
-  const [selectedActor, setSelectedActor] = useState<string | null>(null);
-
-  // 워드클라우드 데이터 (useMemo로 캐싱)
   const wordCloudWords = useMemo(() => {
     if (!showWordCloud) return [];
     if (selectedActor === "전체 데이터" || !selectedActor) {
@@ -409,7 +427,6 @@ function App() {
     return extractKeywords(messages.filter(msg => msg.threat_actor === selectedActor));
   }, [showWordCloud, selectedActor, messages]);
 
-  // 워드클라우드 모달 열기
   const showWordCloudForCurrentFilter = () => {
     if (monitorActor === null) {
       setSelectedActor("전체 데이터");
@@ -418,67 +435,27 @@ function App() {
     }
     setShowWordCloud(true);
   };
+
   const closeWordCloud = () => {
     setShowWordCloud(false);
     setSelectedActor(null);
   };
 
-  // 차트 데이터 생성 함수
-  const generateChartData = (): ChartData[] => {
-    if (!dashboardStats) return [];
-    const data: ChartData[] = [];
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-
-      const baseTotal = dashboardStats.totalThreats;
-      const baseToday = dashboardStats.todayThreats;
-
-      const variation = Math.random() * 0.2 - 0.1;
-      const totalThreats = Math.floor(baseTotal * (1 + variation * (i + 1) * 0.05));
-      const todayThreats = Math.floor(baseToday * (1 + variation * 3));
-
-      data.push({
-        date: date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" }),
-        totalThreats,
-        todayThreats: i === 0 ? dashboardStats.todayThreats : todayThreats,
-      });
-    }
-    return data;
-  };
-
-  const toggleChart = () => {
-    if (!showChart) {
-      setChartLoading(true);
-      setTimeout(() => {
-        setChartData(generateChartData());
-        setChartLoading(false);
-      }, 500);
-    }
-    setShowChart(!showChart);
-  };
-
-  // 차트 최대값 계산
+  // 차트 계산 로직
   const maxValue = chartData.length > 0 ? Math.max(...chartData.map((d) => Math.max(d.totalThreats, d.todayThreats))) : 1;
-  const chartWidth = 600;
-  const chartHeight = 300;
-  const padding = 40;
+  const chartWidth = 700;
+  const chartHeight = 400;
+  const padding = 60;
 
   const getXPosition = (index: number) => {
     return padding + (index * (chartWidth - padding * 2)) / (chartData.length - 1);
   };
+
   const getYPosition = (value: number) => {
     return chartHeight - padding - (value / maxValue) * (chartHeight - padding * 2);
   };
 
-  const totalThreatsPath = chartData
-    .map((data, index) => {
-      const x = getXPosition(index);
-      const y = getYPosition(data.totalThreats);
-      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
-    })
-    .join(" ");
+
   const todayThreatsPath = chartData
     .map((data, index) => {
       const x = getXPosition(index);
@@ -487,7 +464,6 @@ function App() {
     })
     .join(" ");
 
-  // --- 렌더링 ---
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
       <div className={`flex min-h-screen flex-col ${bgMain}`}>
@@ -538,192 +514,294 @@ function App() {
         </header>
 
         {/* 차트 모달 */}
-        {showChart && (
-          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div
-              className={`${isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} border rounded-lg w-full max-w-5xl p-6 mx-4`}
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className={`text-xl font-bold ${textMain}`}>최근 7일간 위협 탐지 현황</h3>
-                <button
-                  className={`${isDarkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"}`}
-                  onClick={() => setShowChart(false)}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-              {chartLoading ? (
-                <div className="flex justify-center items-center h-96">
-                  <div className={`text-lg ${textSub}`}>차트 데이터 로딩 중...</div>
-                </div>
-              ) : (
-                <div className="h-96 relative flex justify-center">
-                  <svg width={chartWidth} height={chartHeight} className="overflow-visible">
-                    <defs>
-                      <pattern
-                        id="grid"
-                        width="50"
-                        height="30"
-                        patternUnits="userSpaceOnUse"
-                        className={isDarkMode ? "opacity-20" : "opacity-30"}
+        {/* 차트 모달 */}
+{showChart && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div
+      className={`${isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"} border rounded-lg w-full max-w-6xl max-h-[90vh] overflow-auto`}
+    >
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className={`text-xl font-bold ${textMain}`}>최근 7일간 위협 탐지 현황</h3>
+          <button
+            className={`${isDarkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"}`}
+            onClick={() => setShowChart(false)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        {chartLoading ? (
+          <div className="flex justify-center items-center h-96">
+            <div className="flex flex-col items-center gap-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              <div className={`text-lg ${textSub}`}>실제 데이터를 불러오는 중...</div>
+            </div>
+          </div>
+        ) : chartData.length === 0 ? (
+          <div className="flex justify-center items-center h-96">
+            <div className={`text-lg ${textSub}`}>표시할 데이터가 없습니다.</div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center">
+            <div className="relative mb-6">
+              <svg width={chartWidth} height={chartHeight} className="overflow-visible">
+                {/* CSS 애니메이션 정의 */}
+                <defs>
+                  <style>
+                    {`
+                      @keyframes drawLine {
+                        to {
+                          stroke-dashoffset: 0;
+                        }
+                      }
+                      @keyframes fadeIn {
+                        to {
+                          opacity: 1;
+                        }
+                      }
+                      .tooltip-rect {
+                        opacity: 0;
+                        transition: opacity 0.2s ease;
+                      }
+                      .tooltip-rect:hover {
+                        opacity: 1;
+                      }
+                    `}
+                  </style>
+                </defs>
+
+                {/* 그리드 */}
+                <defs>
+                  <pattern
+                    id="grid"
+                    width="50"
+                    height="30"
+                    patternUnits="userSpaceOnUse"
+                    className={isDarkMode ? "opacity-20" : "opacity-30"}
+                  >
+                    <path d="M 50 0 L 0 0 0 30" fill="none" stroke="currentColor" strokeWidth="1" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#grid)" />
+                
+                {/* 수평선 */}
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <line
+                    key={ratio}
+                    x1={padding}
+                    y1={chartHeight - padding - ratio * (chartHeight - padding * 2)}
+                    x2={chartWidth - padding}
+                    y2={chartHeight - padding - ratio * (chartHeight - padding * 2)}
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    className={isDarkMode ? "opacity-20" : "opacity-30"}
+                  />
+                ))}
+                
+                {/* 수직선 */}
+                {chartData.map((_, index) => (
+                  <line
+                    key={index}
+                    x1={getXPosition(index)}
+                    y1={padding}
+                    x2={getXPosition(index)}
+                    y2={chartHeight - padding}
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    className={isDarkMode ? "opacity-20" : "opacity-30"}
+                  />
+                ))}
+
+                {/* 당일 감지된 위협 영역 (파란색) */}
+                <defs>
+                  <linearGradient id="todayThreatsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity="0.3" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d={`${todayThreatsPath} L ${getXPosition(chartData.length - 1)} ${chartHeight - padding} L ${padding} ${chartHeight - padding} Z`}
+                  fill="url(#todayThreatsGradient)"
+                  className="animate-pulse"
+                  style={{ animationDuration: "3s", animationDelay: "0.5s" }}
+                />
+
+                {/* 당일 감지된 위협 라인 */}
+                <path
+                  d={todayThreatsPath}
+                  fill="none"
+                  stroke="#2563eb"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="drop-shadow-sm"
+                  style={{
+                    strokeDasharray: "1000",
+                    strokeDashoffset: "1000",
+                    animation: "drawLine 2s ease-out 0.5s forwards",
+                  }}
+                />
+
+                {/* 데이터 포인트 (동그라미) */}
+                {chartData.map((data, index) => {
+                  const x = getXPosition(index);
+                  const y = getYPosition(data.todayThreats);
+                  const tooltipId = `tooltip-${index}`;
+                  
+                  return (
+                    <g key={`points-${index}`}>
+                      {/* 호버 영역 (투명한 큰 원) */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="15"
+                        fill="transparent"
+                        className="cursor-pointer"
+                        onMouseEnter={() => {
+                          const tooltip = document.getElementById(tooltipId);
+                          if (tooltip) tooltip.style.opacity = '1';
+                        }}
+                        onMouseLeave={() => {
+                          const tooltip = document.getElementById(tooltipId);
+                          if (tooltip) tooltip.style.opacity = '0';
+                        }}
+                      />
+                      
+                      {/* 실제 데이터 포인트 */}
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="6"
+                        fill="#2563eb"
+                        stroke="white"
+                        strokeWidth="2"
+                        className="drop-shadow-sm pointer-events-none"
+                        style={{
+                          opacity: 0,
+                          animation: `fadeIn 0.5s ease-out ${1.5 + index * 0.2}s forwards`,
+                        }}
+                      />
+                      
+                      {/* 툴팁 */}
+                      <g
+                        id={tooltipId}
+                        style={{ opacity: 0, transition: 'opacity 0.2s ease' }}
+                        className="pointer-events-none"
                       >
-                        <path d="M 50 0 L 0 0 0 30" fill="none" stroke="currentColor" strokeWidth="1" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-                    {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
-                      <line
-                        key={ratio}
-                        x1={padding}
-                        y1={chartHeight - padding - ratio * (chartHeight - padding * 2)}
-                        x2={chartWidth - padding}
-                        y2={chartHeight - padding - ratio * (chartHeight - padding * 2)}
-                        stroke="currentColor"
-                        strokeWidth="1"
-                        className={isDarkMode ? "opacity-20" : "opacity-30"}
-                      />
-                    ))}
-                    {chartData.map((_, index) => (
-                      <line
-                        key={index}
-                        x1={getXPosition(index)}
-                        y1={padding}
-                        x2={getXPosition(index)}
-                        y2={chartHeight - padding}
-                        stroke="currentColor"
-                        strokeWidth="1"
-                        className={isDarkMode ? "opacity-20" : "opacity-30"}
-                      />
-                    ))}
-                    <defs>
-                      <linearGradient id="totalThreatsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#9333ea" stopOpacity="1.0" />
-                        <stop offset="100%" stopColor="#9333ea" stopOpacity="0.5" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d={`${totalThreatsPath} L ${getXPosition(chartData.length - 1)} ${chartHeight - padding} L ${padding} ${chartHeight - padding} Z`}
-                      fill="url(#totalThreatsGradient)"
-                      className="animate-pulse"
-                      style={{ animationDuration: "3s" }}
-                    />
-                    <defs>
-                      <linearGradient id="todayThreatsGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#2563eb" stopOpacity="1.0" />
-                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.5" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d={`${todayThreatsPath} L ${getXPosition(chartData.length - 1)} ${chartHeight - padding} L ${padding} ${chartHeight - padding} Z`}
-                      fill="url(#todayThreatsGradient)"
-                      className="animate-pulse"
-                      style={{ animationDuration: "3s", animationDelay: "0.5s" }}
-                    />
-                    <path
-                      d={totalThreatsPath}
-                      fill="none"
-                      stroke="#9333ea"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="drop-shadow-sm"
-                      style={{
-                        strokeDasharray: "1000",
-                        strokeDashoffset: "1000",
-                        animation: "drawLine 2s ease-out forwards",
-                      }}
-                    />
-                    <path
-                      d={todayThreatsPath}
-                      fill="none"
-                      stroke="#2563eb"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="drop-shadow-sm"
-                      style={{
-                        strokeDasharray: "1000",
-                        strokeDashoffset: "1000",
-                        animation: "drawLine 2s ease-out 0.5s forwards",
-                      }}
-                    />
-                    {chartData.map((data, index) => (
-                      <g key={`total-${index}`}>
-                        <circle
-                          cx={getXPosition(index)}
-                          cy={getYPosition(data.totalThreats)}
-                          r="6"
-                          fill="#9333ea"
-                          stroke="white"
-                          strokeWidth="2"
-                          className="drop-shadow-sm cursor-pointer hover:r-8 transition-all"
-                          style={{
-                            opacity: 0,
-                            animation: `fadeIn 0.5s ease-out ${1 + index * 0.2}s forwards`,
-                          }}
+                        {/* 툴팁 배경 */}
+                        <rect
+                          x={x - 50}
+                          y={y - 70}
+                          width="100"
+                          height="50"
+                          rx="8"
+                          ry="8"
+                          fill={isDarkMode ? "#1f2937" : "#ffffff"}
+                          stroke={isDarkMode ? "#374151" : "#d1d5db"}
+                          strokeWidth="1"
+                          className="drop-shadow-lg"
+                        />
+                        
+                        {/* 툴팁 화살표 */}
+                        <path
+                          d={`M ${x - 6} ${y - 20} L ${x} ${y - 14} L ${x + 6} ${y - 20} Z`}
+                          fill={isDarkMode ? "#1f2937" : "#ffffff"}
+                          stroke={isDarkMode ? "#374151" : "#d1d5db"}
+                          strokeWidth="1"
+                        />
+                        
+                        {/* 툴팁 텍스트 - 날짜 */}
+                        <text
+                          x={x}
+                          y={y - 50}
+                          textAnchor="middle"
+                          className={`text-xs font-semibold ${isDarkMode ? 'fill-white' : 'fill-gray-900'}`}
                         >
-                          <title>{`${data.date}: ${data.totalThreats.toLocaleString()}개`}</title>
-                        </circle>
-                        <circle
-                          cx={getXPosition(index)}
-                          cy={getYPosition(data.todayThreats)}
-                          r="6"
-                          fill="#2563eb"
-                          stroke="white"
-                          strokeWidth="2"
-                          className="drop-shadow-sm cursor-pointer hover:r-8 transition-all"
-                          style={{
-                            opacity: 0,
-                            animation: `fadeIn 0.5s ease-out ${1.5 + index * 0.2}s forwards`,
-                          }}
+                          {data.date}
+                        </text>
+                        
+                        {/* 툴팁 텍스트 - 위협 수 */}
+                        <text
+                          x={x}
+                          y={y - 35}
+                          textAnchor="middle"
+                          className={`text-xs ${isDarkMode ? 'fill-blue-400' : 'fill-blue-600'}`}
                         >
-                          <title>{`${data.date}: ${data.todayThreats.toLocaleString()}개`}</title>
-                        </circle>
+                          위협: {data.todayThreats.toLocaleString()}개
+                        </text>
+                        
+                        {/* 추가 정보 (텔레그램/다크웹 분리) */}
+                        {(data.telegramCount || data.darkwebCount) && (
+                          <text
+                            x={x}
+                            y={y - 22}
+                            textAnchor="middle"
+                            className={`text-xs ${isDarkMode ? 'fill-gray-400' : 'fill-gray-600'}`}
+                          >
+                            {data.telegramCount ? `텔레그램: ${data.telegramCount}` : ''}
+                            {data.telegramCount && data.darkwebCount ? ' | ' : ''}
+                            {data.darkwebCount ? `다크웹: ${data.darkwebCount}` : ''}
+                          </text>
+                        )}
                       </g>
-                    ))}
-                    {chartData.map((data, index) => (
-                      <text
-                        key={`x-label-${index}`}
-                        x={getXPosition(index)}
-                        y={chartHeight - 10}
-                        textAnchor="middle"
-                        className={`text-sm ${textSub} fill-current`}
-                      >
-                        {data.date}
-                      </text>
-                    ))}
-                    {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
-                      <text
-                        key={`y-label-${ratio}`}
-                        x={padding - 10}
-                        y={chartHeight - padding - ratio * (chartHeight - padding * 2) + 5}
-                        textAnchor="end"
-                        className={`text-xs ${textSub} fill-current`}
-                      >
-                        {Math.floor(maxValue * ratio).toLocaleString()}
-                      </text>
-                    ))}
-                  </svg>
-                  <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex gap-6">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-purple-600 rounded-full"></div>
-                      <span className={`text-sm ${textMain}`}>전체 감지된 위협</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
-                      <span className={`text-sm ${textMain}`}>금일 감지된 위협</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+                    </g>
+                  );
+                })}
+
+                {/* X축 라벨 */}
+                {chartData.map((data, index) => (
+                  <text
+                    key={`x-label-${index}`}
+                    x={getXPosition(index)}
+                    y={chartHeight - 10}
+                    textAnchor="middle"
+                    className={`text-sm ${textSub} fill-current`}
+                  >
+                    {data.date}
+                  </text>
+                ))}
+
+                {/* Y축 라벨 */}
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+                  <text
+                    key={`y-label-${ratio}`}
+                    x={padding - 10}
+                    y={chartHeight - padding - ratio * (chartHeight - padding * 2) + 5}
+                    textAnchor="end"
+                    className={`text-xs ${textSub} fill-current`}
+                  >
+                    {Math.floor(maxValue * ratio).toLocaleString()}
+                  </text>
+                ))}
+              </svg>
+            </div>
+            
+            {/* 범례 */}
+            <div className="flex gap-8 justify-center">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
+                <span className={`text-sm ${textMain}`}>당일 감지된 위협</span>
+              </div>
+            </div>
+            
+            {/* 사용법 안내 */}
+            <div className={`mt-4 p-3 rounded-lg ${isDarkMode ? "bg-gray-800" : "bg-gray-100"}`}>
+              <p className={`text-xs text-center ${textSub}`}>
+                💡 각 날짜의 동그라미에 마우스를 올리면 상세 정보를 확인할 수 있습니다
+              </p>
             </div>
           </div>
         )}
+      </div>
+    </div>
+  </div>
+)}
 
         <main className="flex-1 p-4 md:p-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card className={card1}>
-            <CardContent className="p-6 h-full flex flex-col">
+              <CardContent className="p-6 h-full flex flex-col">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium opacity-70">전체 감지된 위협</p>
@@ -744,7 +822,6 @@ function App() {
             </Card>
             <Card className={card2}>
               <CardContent className="p-6">
-
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium opacity-70">금일 감지된 위협</p>
@@ -788,11 +865,11 @@ function App() {
               </CardContent>
             </Card>
           </div>
-          <div className="grid gap-6 md:grid-cols-2 relative overflow-hidden" style={{ minHeight: '600px' }}>
 
+          <div className="grid gap-6 md:grid-cols-2 relative overflow-hidden" style={{ minHeight: '600px' }}>
             <section className={`transition-transform duration-500 ease-in-out ${showWordCloud ? "-translate-x-full opacity-0" : "translate-x-0 opacity-100"}`}>
-              <Card className={sectionCard + " mb-6"}style={{ height: '600px' }}>
-                    <CardContent className="p-5 h-full flex flex-col">
+              <Card className={sectionCard + " mb-6"} style={{ height: '600px' }}>
+                <CardContent className="p-5 h-full flex flex-col">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className={`text-xl font-bold ${textMain}`}>다크웹 데이터 목록</h2>
                     <span className={`text-xs ${textSub}`}>{filteredDarkwebItems.length}개 항목</span>
@@ -826,7 +903,7 @@ function App() {
                             key={item._id}
                             className={isDarkMode ? "bg-gray-900 border-none text-white" : "bg-gray-50 border-none text-gray-900"}
                           >
-                            <CardContent className="p-0 h-full flex flex-col">
+                            <CardContent className="p-4 h-full flex flex-col">
                               <div className="flex items-center justify-between mb-2">
                                 <span
                                   className={`text-xs px-2 py-0.5 rounded font-bold ${
@@ -878,9 +955,10 @@ function App() {
                 </CardContent>
               </Card>
             </section>
-            <section className={`transition-transform duration-500 ease-in-out ${showWordCloud ? "-translate-x-full "  : "translate-x-0"}`}>
-              <Card className={sectionCard + " mb-6"}style={{ height: '600px' }}>
-              <CardContent className="p-0 h-full flex flex-col">
+
+            <section className={`transition-transform duration-500 ease-in-out ${showWordCloud ? "-translate-x-full" : "translate-x-0"}`}>
+              <Card className={sectionCard + " mb-6"} style={{ height: '600px' }}>
+                <CardContent className="p-0 h-full flex flex-col">
                   <div className={`flex items-center justify-between border-b p-4 ${borderB}`}>
                     <h3 className={`text-xl font-bold ${textMain}`}>텔레그램 위험 정보</h3>
                     <div className="flex items-center gap-3">
@@ -939,7 +1017,7 @@ function App() {
                       <p className="text-red-400">{error}</p>
                     </div>
                   ) : (
-                    <div className="max-h-[400px]  overflow-y-auto overflow-x-hidden">
+                    <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                       {filteredMessages.map((message, index) => (
                         <div
                           key={message.id || index}
@@ -1009,22 +1087,23 @@ function App() {
                 </CardContent>
               </Card>
             </section>
+
             {showWordCloud && (
-  <section 
-    className={`absolute top-0 w-1/2 transition-all duration-500 ease-in-out transform ${showWordCloud ? "opacity-100" : "opacity-0"}`} 
-    style={{ left: 'calc(50% - -1.5rem)' }}
-  >
-    <Card className={sectionCard + " mb-6"}style={{ height: '600px' }}>
-    <CardContent className="p-6 h-full flex flex-col">
-    <div className={`flex items-center justify-between mb-6 pr-4`}>
-  <div className="flex items-center gap-3">
-    <button onClick={closeWordCloud}>
-      <ArrowLeft className="h-4 w-4" />
-    </button>
-    <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
-  </div>
-  <span className={`text-xs ${textSub}`}>키워드 분석</span>
-</div>
+              <section
+                className={`absolute top-0 w-1/2 transition-all duration-500 ease-in-out transform ${showWordCloud ? "opacity-100" : "opacity-0"}`} 
+                style={{ left: 'calc(50% + 1.5rem)' }}
+              >
+                <Card className={sectionCard + " mb-6"} style={{ height: '600px' }}>
+                  <CardContent className="p-6 h-full flex flex-col">
+                    <div className={`flex items-center justify-between mb-6 pr-2`}>
+                      <div className="flex items-center gap-3">
+                        <button onClick={closeWordCloud}>
+                          <ArrowLeft className="h-4 w-4" />
+                        </button>
+                        <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
+                      </div>
+                      <span className={`text-xs ${textSub}`}>키워드 분석</span>
+                    </div>
                     <div className="relative h-[485px] overflow-auto">
                       {wordCloudWords.length > 0 ? (
                         <WordCloud
@@ -1039,7 +1118,7 @@ function App() {
                           rotate={() => 0}
                           padding={5}
                           random={() => 0.5}
-                          fill={(_d: any, i: number) => {  // 여기에 타입 추가
+                          fill={(_d: any, i: number) => {
                             const colors = ["#8b5cf6", "#3b82f6", "#ef4444", "#06b6d4", "#10b981", "#f59e0b", "#6b7280"];
                             return colors[i % colors.length];
                           }}
@@ -1061,6 +1140,8 @@ function App() {
             )}
           </div>
         </main>
+
+        {/* 알림 모달들 */}
         {showNotificationModal && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className={isDarkMode ? "bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6" : "bg-white border border-gray-200 rounded-lg w-full max-w-md p-6"}>
@@ -1098,6 +1179,7 @@ function App() {
             </div>
           </div>
         )}
+
         {showIdInputModal && selectedPlatform && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className={isDarkMode ? "bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6" : "bg-white border border-gray-200 rounded-lg w-full max-w-md p-6"}>
