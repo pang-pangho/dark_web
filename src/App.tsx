@@ -9,6 +9,8 @@ import {
   Bell,
   MessageCircle,
   X,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { ThemeProvider } from "./components/theme-provider";
@@ -109,6 +111,10 @@ function App() {
   const [savedNotifications, setSavedNotifications] = useState<{ telegram?: string; discord?: string }>({});
   const [subscribeStatus, setSubscribeStatus] = useState<string | null>(null);
 
+  // 테마 상태
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const toggleTheme = () => setIsDarkMode((prev) => !prev);
+
   // --- 증감률 계산 함수 ---
   function getChangeRate(today: number, yesterday: number): {rate: number, up: boolean} {
     if (yesterday === 0) {
@@ -135,12 +141,9 @@ function App() {
   // 소켓 연결 및 실시간 대시보드 갱신
   useEffect(() => {
     const sock = io(SOCKET_URL);
-
-    // 데이터가 바뀔 때마다 대시보드 지표 다시 fetch
     sock.on("dataChanged", () => {
       fetchDashboardStats();
     });
-
     return () => {
       sock.disconnect();
     };
@@ -173,7 +176,6 @@ function App() {
             [selectedPlatform]: platformId.trim(),
           }));
           setSubscribeStatus("구독이 등록되었습니다!");
-          // 구독 성공 후 대시보드 지표 다시 fetch
           fetchDashboardStats();
         } else {
           setSubscribeStatus("구독 등록에 실패했습니다.");
@@ -308,15 +310,6 @@ function App() {
     return match ? match[0] : null;
   };
 
-  const extractChannelName = (url: string): string => {
-    if (!url) return "unknown";
-    try {
-      const match = url.match(/t\.me\/([^/]+)/);
-      return match ? match[1] : "unknown";
-    } catch (e) {
-      return "unknown";
-    }
-  };
 
   const actorList = Array.from(
     new Set(messages.map((msg) => msg.threat_actor))
@@ -339,25 +332,60 @@ function App() {
       ? darkwebItems.filter((item) => item.category === darkwebCategory)
       : darkwebItems;
 
+  // 카드, 배경, 텍스트 색상 등 다크/라이트 분기
+  const bgMain = isDarkMode ? "bg-black text-white" : "bg-gray-50 text-gray-900";
+  const borderHeader = isDarkMode ? "border-gray-800 bg-black" : "border-gray-200 bg-white";
+  const card1 = isDarkMode ? "bg-purple-900 border-none text-white" : "bg-purple-600 border-none text-white";
+  const card2 = isDarkMode ? "bg-purple-700 border-none text-white" : "bg-purple-500 border-none text-white";
+  const card3 = isDarkMode ? "bg-blue-900 border-none text-white" : "bg-blue-600 border-none text-white";
+  const card4 = isDarkMode ? "bg-emerald-800 border-none text-white" : "bg-emerald-600 border-none text-white";
+  const sectionCard = isDarkMode ? "border-gray-800 bg-gray-950" : "border-gray-200 bg-white";
+  const filterBtnActive = isDarkMode ? "bg-blue-700 text-white" : "bg-blue-700 text-white";
+  const filterBtn = isDarkMode ? "bg-gray-800 text-gray-300" : "bg-gray-200 text-gray-700";
+  const borderB = isDarkMode ? "border-gray-800" : "border-gray-200";
+  const textSub = isDarkMode ? "text-gray-400" : "text-gray-600";
+  const textMain = isDarkMode ? "text-white" : "text-gray-900";
+
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
-      <div className="flex min-h-screen flex-col bg-black text-white">
-        <header className="border-b border-gray-800 p-4">
+      <div className={`flex min-h-screen flex-col ${bgMain}`}>
+        <header className={`border-b p-4 ${borderHeader}`}>
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Untitle</h1>
-            <button
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-              onClick={() => setShowNotificationModal(true)}
-            >
-              <Bell className="h-4 w-4" />
-              알림받기
-            </button>
+            <h1 className={`text-2xl font-bold ${textMain}`}>Untitle</h1>
+            <div className="flex items-center gap-3">
+              {/* 테마 토글 버튼 */}
+              <button
+                onClick={toggleTheme}
+                className={`relative w-14 h-7 rounded-full transition-all duration-300 ease-in-out ${
+                  isDarkMode ? "bg-gray-600" : "bg-gray-300"
+                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+              >
+                <div
+                  className={`absolute top-0.5 w-6 h-6 rounded-full transition-all duration-300 ease-in-out transform shadow-md flex items-center justify-center ${
+                    isDarkMode ? "translate-x-0.5 bg-gray-800" : "translate-x-7 bg-white"
+                  }`}
+                >
+                  {isDarkMode ? (
+                    <Moon className="h-3 w-3 text-blue-400" />
+                  ) : (
+                    <Sun className="h-3 w-3 text-yellow-500" />
+                  )}
+                </div>
+              </button>
+              <button
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                onClick={() => setShowNotificationModal(true)}
+              >
+                <Bell className="h-4 w-4" />
+                알림받기
+              </button>
+            </div>
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {/* 전체 감지된 위협 */}
-            <Card className="bg-purple-900 border-none text-white">
+            <Card className={card1}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -378,7 +406,7 @@ function App() {
               </CardContent>
             </Card>
             {/* 금일 감지된 위협 */}
-            <Card className="bg-purple-700 border-none text-white">
+            <Card className={card2}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -398,7 +426,7 @@ function App() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="bg-blue-900 border-none text-white">
+            <Card className={card3}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -410,7 +438,7 @@ function App() {
                 </div>
               </CardContent>
             </Card>
-            <Card className="bg-emerald-800 border-none text-white">
+            <Card className={card4}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -426,22 +454,18 @@ function App() {
           <div className="grid gap-6 md:grid-cols-2">
             {/* 왼쪽: 다크웹 데이터 카드 */}
             <section>
-              <Card className="border-gray-800 bg-gray-950 mb-6">
+              <Card className={sectionCard + " mb-6"}>
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold">다크웹 데이터 목록</h2>
-                    <span className="text-xs text-gray-400">
+                    <h2 className={`text-xl font-bold ${textMain}`}>다크웹 데이터 목록</h2>
+                    <span className={`text-xs ${textSub}`}>
                       {filteredDarkwebItems.length}개 항목
                     </span>
                   </div>
                   {/* 카테고리 필터 버튼 */}
                   <div className="flex flex-wrap gap-2 mb-4">
                     <button
-                      className={`text-xs px-2 py-1 rounded ${
-                        !darkwebCategory || darkwebCategory === "전체 보기"
-                          ? "bg-blue-700 text-white"
-                          : "bg-gray-800 text-gray-300"
-                      }`}
+                      className={`text-xs px-2 py-1 rounded ${!darkwebCategory || darkwebCategory === "전체 보기" ? filterBtnActive : filterBtn}`}
                       onClick={() => setDarkwebCategory("전체 보기")}
                     >
                       전체 보기
@@ -449,11 +473,7 @@ function App() {
                     {darkwebCategories.map((cat) => (
                       <button
                         key={cat}
-                        className={`text-xs px-2 py-1 rounded ${
-                          darkwebCategory === cat
-                            ? "bg-blue-700 text-white"
-                            : "bg-gray-800 text-gray-300"
-                        }`}
+                        className={`text-xs px-2 py-1 rounded ${darkwebCategory === cat ? filterBtnActive : filterBtn}`}
                         onClick={() => setDarkwebCategory(cat)}
                       >
                         {cat}
@@ -461,16 +481,16 @@ function App() {
                     ))}
                   </div>
                   {darkwebLoading ? (
-                    <div className="text-gray-400">로딩 중...</div>
+                    <div className={textSub}>로딩 중...</div>
                   ) : darkwebError ? (
                     <div className="text-red-400">{darkwebError}</div>
                   ) : (
-                    <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
+                    <div className="max-h-[515px] overflow-y-auto overflow-x-hidden">
                       <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
                         {filteredDarkwebItems.map((item) => (
                           <Card
                             key={item._id}
-                            className="bg-gray-900 border-none text-white"
+                            className={isDarkMode ? "bg-gray-900 border-none text-white" : "bg-gray-50 border-none text-gray-900"}
                           >
                             <CardContent className="p-4">
                               <div className="flex items-center justify-between mb-2">
@@ -484,27 +504,23 @@ function App() {
                                       ? "bg-orange-700"
                                       : item.category === "계정 정보"
                                       ? "bg-blue-700"
-                                      : "bg-gray-700"
+                                      : isDarkMode
+                                      ? "bg-gray-700"
+                                      : "bg-gray-200"
                                   } text-white`}
                                 >
                                   {item.verified ? "✔️ 검증됨" : item.category}
                                 </span>
                                 {item.count && (
-                                  <span className="text-xs text-gray-300">
+                                  <span className={textSub}>
                                     {item.count}개 항목
                                   </span>
                                 )}
                               </div>
-                              <div className="font-bold mb-1 truncate">
-                                {item.title}
-                              </div>
-                              <div className="text-xs text-gray-400 mb-1">
-                                {item.description}
-                              </div>
+                              <div className={`font-bold mb-1 truncate ${textMain}`}>{item.title}</div>
+                              <div className={`text-xs mb-1 ${textSub}`}>{item.description}</div>
                               {item.site && (
-                                <div className="text-xs text-gray-400 mb-1">
-                                  {item.category}
-                                </div>
+                                <div className={`text-xs mb-1 ${textSub}`}>{item.category}</div>
                               )}
                               <div className="text-xs text-gray-500 mb-1">
                                 {item.date}
@@ -519,11 +535,6 @@ function App() {
                                   {item.url}
                                 </a>
                               )}
-                              <div className="mt-2">
-                                <button className="text-xs text-blue-400 underline">
-                                  상세 정보
-                                </button>
-                              </div>
                             </CardContent>
                           </Card>
                         ))}
@@ -535,25 +546,21 @@ function App() {
             </section>
             {/* 오른쪽: 텔레그램 위험 정보 카드 */}
             <section>
-              <Card className="border-gray-800 bg-gray-950 mb-6">
+              <Card className={sectionCard + " mb-6"}>
                 <CardContent className="p-0">
-                  <div className="flex items-center justify-between border-b border-gray-800 p-4">
-                    <h3 className="text-xl font-bold">텔레그램 위험 정보</h3>
+                  <div className={`flex items-center justify-between border-b p-4 ${borderB}`}>
+                    <h3 className={`text-xl font-bold ${textMain}`}>텔레그램 위험 정보</h3>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center text-sm text-gray-400">
+                      <div className={`flex items-center text-sm ${textSub}`}>
                         <Clock className="mr-1 h-4 w-4" />
                         <span>실시간</span>
                       </div>
                     </div>
                   </div>
                   {/* 행위공격자별 모니터링/차단 태그 */}
-                  <div className="flex flex-wrap gap-2 p-4 border-b border-gray-800">
+                  <div className={`flex flex-wrap gap-2 p-4 border-b ${borderB}`}>
                     <button
-                      className={`text-xs px-2 py-1 rounded ${
-                        monitorActor === null
-                          ? "bg-blue-700 text-white"
-                          : "bg-gray-800 text-gray-300"
-                      }`}
+                      className={`text-xs px-2 py-1 rounded ${monitorActor === null ? filterBtnActive : filterBtn}`}
                       onClick={() => setMonitorActor(null)}
                     >
                       전체 보기
@@ -568,8 +575,8 @@ function App() {
                             isBlocked
                               ? "bg-red-700 text-white"
                               : isMonitored
-                              ? "bg-blue-700 text-white"
-                              : "bg-gray-800 text-gray-300"
+                              ? filterBtnActive
+                              : filterBtn
                           }`}
                           onClick={() => {
                             if (isBlocked) {
@@ -588,20 +595,18 @@ function App() {
                   </div>
                   {loading ? (
                     <div className="flex justify-center items-center h-[200px]">
-                      <p className="text-gray-400">데이터 로딩 중...</p>
+                      <p className={textSub}>데이터 로딩 중...</p>
                     </div>
                   ) : error ? (
                     <div className="flex justify-center items-center h-[200px]">
                       <p className="text-red-400">{error}</p>
                     </div>
                   ) : (
-                    <div className="max-h-[400px] overflow-y-auto">
+                    <div className="max-h-[400px]  overflow-y-auto overflow-x-hidden">
                       {filteredMessages.map((message, index) => (
                         <div
                           key={message.id || index}
-                          className={`border-b border-gray-800 p-4 ${
-                            index === 0 ? "bg-blue-950/20" : ""
-                          }`}
+                          className={`border-b p-4 ${borderB} ${index === 0 ? (isDarkMode ? "bg-blue-950/20" : "bg-blue-100/20") : ""}`}
                         >
                           {/* 메시지 헤더 부분 */}
                           <div className="flex items-center justify-between mb-2">
@@ -614,47 +619,24 @@ function App() {
                           </div>
                           {/* 메시지 본문 */}
                           <div className="mb-2">
-                            <div>
-                              {message.content}
-                              {message.showTranslation && (
-                                <span className="ml-2 text-xs text-green-400">
-                                  (번역됨)
-                                </span>
-                              )}
-                              {!message.showTranslation &&
-                                message.detectedLanguage !== "ko" &&
-                                message.detectedLanguage !== "en" && (
-                                  <span className="ml-2 text-xs text-gray-500">
-                                    (
-                                    {languageNames[
-                                      message.detectedLanguage || "unknown"
-                                    ] || message.detectedLanguage}
-                                    )
-                                  </span>
-                                )}
-                            </div>
-                            {message.channel && (
-                              <div className="mt-2 text-xs text-blue-400 break-all">
-                                채널:{" "}
-                                <a
-                                  href={message.channel}
-                                  className="hover:underline"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  https://t.me/
-                                  {extractChannelName(message.channel)}
-                                </a>
-                              </div>
-                            )}
-                            {expandedMessages[message.id || index] && (
-                              <div className="mt-2 text-xs text-gray-400">
-                                <div>메시지ID: {message.messageId}</div>
-                                <div>날짜: {message.rawDate}</div>
-                                <div>ID: {message.uniqueId}</div>
-                              </div>
-                            )}
-                          </div>
+  <div className={isDarkMode ? "text-white" : "text-gray-900"}>
+    {message.content}
+    {message.showTranslation && (
+      <span className={isDarkMode ? "ml-2 text-xs text-green-400" : "ml-2 text-xs text-green-600"}>
+        (번역됨)
+      </span>
+    )}
+    {!message.showTranslation &&
+      message.detectedLanguage !== "ko" &&
+      message.detectedLanguage !== "en" && (
+        <span className="ml-2 text-xs text-gray-500">
+          ({languageNames[message.detectedLanguage || "unknown"] || message.detectedLanguage})
+        </span>
+      )}
+  </div>
+  {/* ... */}
+</div>
+
                           {!expandedMessages[message.id || index] && (
                             <div className="mt-2">
                               <button
@@ -702,36 +684,36 @@ function App() {
         {/* 이하 알림 모달 등 기존 코드 동일 */}
         {showNotificationModal && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6">
+            <div className={isDarkMode ? "bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6" : "bg-white border border-gray-200 rounded-lg w-full max-w-md p-6"}>
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold">알림받기 설정</h3>
-                <button className="text-gray-400 hover:text-white" onClick={() => setShowNotificationModal(false)}>
+                <h3 className={`text-xl font-bold ${textMain}`}>알림받기 설정</h3>
+                <button className={isDarkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"} onClick={() => setShowNotificationModal(false)}>
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="text-center mb-6">
-                <p className="text-gray-400 mb-4">알림을 받을 플랫폼을 선택해주세요</p>
+                <p className={`${textSub} mb-4`}>알림을 받을 플랫폼을 선택해주세요</p>
                 <div className="flex justify-center gap-8">
                   {/* 텔레그램 버튼 */}
                   <button
-                    className="flex flex-col items-center gap-3 p-6 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group"
+                    className={`flex flex-col items-center gap-3 p-6 rounded-lg transition-colors group ${isDarkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-gray-100 hover:bg-gray-200"}`}
                     onClick={() => selectPlatform("telegram")}
                   >
                     <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center group-hover:bg-blue-400 transition-colors">
                       <MessageCircle className="h-8 w-8 text-white" />
                     </div>
-                    <span className="text-white font-medium">텔레그램</span>
+                    <span className={`font-medium ${textMain}`}>텔레그램</span>
                     {savedNotifications.telegram && <span className="text-xs text-green-400">✓ 설정됨</span>}
                   </button>
                   {/* 디스코드 버튼 */}
                   <button
-                    className="flex flex-col items-center gap-3 p-6 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors group"
+                    className={`flex flex-col items-center gap-3 p-6 rounded-lg transition-colors group ${isDarkMode ? "bg-gray-800 hover:bg-gray-700" : "bg-gray-100 hover:bg-gray-200"}`}
                     onClick={() => selectPlatform("discord")}
                   >
                     <div className="w-16 h-16 bg-indigo-500 rounded-full flex items-center justify-center group-hover:bg-indigo-400 transition-colors">
                       <MessageCircle className="h-8 w-8 text-white" />
                     </div>
-                    <span className="text-white font-medium">디스코드</span>
+                    <span className={`font-medium ${textMain}`}>디스코드</span>
                     {savedNotifications.discord && <span className="text-xs text-green-400">✓ 설정됨</span>}
                   </button>
                 </div>
@@ -742,13 +724,13 @@ function App() {
         {/* 아이디 입력 모달 */}
         {showIdInputModal && selectedPlatform && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6">
+            <div className={isDarkMode ? "bg-gray-900 border border-gray-800 rounded-lg w-full max-w-md p-6" : "bg-white border border-gray-200 rounded-lg w-full max-w-md p-6"}>
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold">
+                <h3 className={`text-xl font-bold ${textMain}`}>
                   {selectedPlatform === "telegram" ? "텔레그램" : "디스코드"} 아이디 입력
                 </h3>
                 <button
-                  className="text-gray-400 hover:text-white"
+                  className={isDarkMode ? "text-gray-400 hover:text-white" : "text-gray-600 hover:text-gray-900"}
                   onClick={() => {
                     setShowIdInputModal(false);
                     setSelectedPlatform(null);
@@ -766,8 +748,8 @@ function App() {
                     <MessageCircle className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h4 className="font-medium">{selectedPlatform === "telegram" ? "텔레그램" : "디스코드"}</h4>
-                    <p className="text-sm text-gray-400">
+                    <h4 className={`font-medium ${textMain}`}>{selectedPlatform === "telegram" ? "텔레그램" : "디스코드"}</h4>
+                    <p className={`text-sm ${textSub}`}>
                       {selectedPlatform === "telegram"
                         ? "@username 또는 사용자 ID를 입력하세요"
                         : "디스코드 Webhook URL을 입력하세요"}
@@ -779,9 +761,13 @@ function App() {
                   value={platformId}
                   onChange={(e) => setPlatformId(e.target.value)}
                   placeholder={selectedPlatform === "telegram" ? "@username 또는 chat_id" : "Discord Webhook URL"}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                  className={`w-full border rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                  }`}
                 />
-                <p className="text-xs text-gray-500 mt-2">
+                <p className={`text-xs mt-2 ${textSub}`}>
                   {selectedPlatform === "telegram"
                     ? "예: @myusername 또는 123456789"
                     : "예: https://discord.com/api/webhooks/xxx/yyy"}
@@ -792,7 +778,11 @@ function App() {
               </div>
               <div className="flex gap-3">
                 <button
-                  className="flex-1 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  className={`flex-1 px-4 py-2 rounded-lg transition-colors ${
+                    isDarkMode
+                      ? "bg-gray-700 hover:bg-gray-600 text-white"
+                      : "bg-gray-200 hover:bg-gray-300 text-gray-900"
+                  }`}
                   onClick={() => {
                     setShowIdInputModal(false);
                     setSelectedPlatform(null);
