@@ -1016,18 +1016,15 @@ function App() {
   >
     <Card className={sectionCard + " mb-6"}style={{ height: '600px' }}>
     <CardContent className="p-6 h-full flex flex-col">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={closeWordCloud}
-              className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-gray-800" : "hover:bg-gray-100"}`}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
-          </div>
-          <span className={`text-xs ${textSub}`}>키워드 분석</span>
-        </div>
+    <div className={`flex items-center justify-between mb-6 pr-4`}>
+  <div className="flex items-center gap-3">
+    <button onClick={closeWordCloud}>
+      <ArrowLeft className="h-4 w-4" />
+    </button>
+    <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
+  </div>
+  <span className={`text-xs ${textSub}`}>키워드 분석</span>
+</div>
                     <div className="relative h-[485px] overflow-auto">
                       {wordCloudWords.length > 0 ? (
                         <WordCloud
