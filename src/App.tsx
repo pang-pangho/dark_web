@@ -172,7 +172,6 @@ function App() {
         telegramCount: item.telegramCount || 0
       }));
       
-      console.log('차트 데이터:', chartFormattedData);
       setChartData(chartFormattedData);
     } catch (error) {
       console.error('차트 데이터 로딩 실패:', error);
