@@ -21,8 +21,8 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 import WordCloud from "react-d3-cloud";
 
-// const SOCKET_URL = "http://localhost:4000";
-const SOCKET_URL = "https://dark-web-6squ.onrender.com";
+const SOCKET_URL = "http://localhost:4000";
+// const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 const detectLanguage = (text: string): string => {
   const langPatterns = {
     en: /\b(the|is|are|and|or|but|in|on|at|to|for|with|by|of|from)\b/i,
@@ -193,9 +193,9 @@ function App() {
     
     sock.on("dataChanged", (change) => {
       fetchDashboardStats();
-      if (showChart) {
-        fetchRealChartData();
-      }
+      // if (showChart) {
+      //   fetchRealChartData();
+      // }
       if (change?.operationType === "insert" && change?.fullDocument) {
         setMessages((prev) => {
           const exists = prev.some(msg => msg.id === change.fullDocument._id);
@@ -206,12 +206,12 @@ function App() {
     });
 
     fetchDashboardStats();
-    fetchRealChartData();
+    // fetchRealChartData();
   
     return () => {
       sock.disconnect();
     };
-  }, [showChart]);
+  }, );
 
   const selectPlatform = (platform: "telegram" | "discord") => {
     setSelectedPlatform(platform);
