@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google-cloud/aiplatform": "^4.2.0",
+    "@google-cloud/language": "^7.0.2",
+    "@google-cloud/translate": "^9.1.0",
     "@huggingface/transformers": "^3.5.1",
     "clsx": "^2.0.0",
     "compromise": "^14.14.4",

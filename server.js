@@ -7,6 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch";
 import 'dotenv/config'; 
+import translateRouter from './server/translate.js'; // 번역 라우터 추가
 const TELEGRAM_BOT_TOKEN =  process.env.TELEGRAM_BOT_TOKEN;
 
 const app = express();
@@ -31,7 +32,7 @@ const uri =
 const client = new MongoClient(uri);
 
 let db;
-
+app.use('/api', translateRouter); // 번역 라우터 등록
 // --- 알림 발송 함수 ---
 async function sendTelegram(chatId, text) {
   try {
