@@ -492,51 +492,83 @@ const closeWordCloud = () => {
   return (
     <ThemeProvider defaultTheme="dark" attribute="class">
       <div className={`flex min-h-screen flex-col ${bgMain}`}>
-        <header className={`border-b p-4 ${borderHeader}`}>
-          <div className="flex items-center justify-between">
-            <h1 className={`text-2xl font-bold ${textMain}`}>Untitle</h1>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={toggleChart}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
-                  showChart
-                    ? "bg-blue-600 text-white"
-                    : isDarkMode
-                      ? "bg-gray-800 hover:bg-gray-700 text-gray-300"
-                      : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                }`}
-              >
-                <BarChart3 className="h-4 w-4" />
-                <span className="text-sm">통계</span>
-              </button>
-              <button
-                onClick={toggleTheme}
-                className={`relative w-14 h-7 rounded-full transition-all duration-300 ease-in-out ${
-                  isDarkMode ? "bg-gray-600" : "bg-gray-300"
-                } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
-              >
-                <div
-                  className={`absolute top-0.5 w-6 h-6 rounded-full transition-all duration-300 ease-in-out transform shadow-md flex items-center justify-center ${
-                    isDarkMode ? "translate-x-0.5 bg-gray-800" : "translate-x-7 bg-white"
-                  }`}
-                >
-                  {isDarkMode ? (
-                    <Moon className="h-3 w-3 text-blue-400" />
-                  ) : (
-                    <Sun className="h-3 w-3 text-yellow-500" />
-                  )}
-                </div>
-              </button>
-              <button
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-                onClick={() => setShowNotificationModal(true)}
-              >
-                <Bell className="h-4 w-4" />
-                알림받기
-              </button>
+      <header className={`border-b p-4 ${borderHeader}`}>
+  <div className="flex items-center justify-between">
+    {/* 로고와 사이트명 추가 */}
+    <div className="flex items-center gap-3">
+      {/* Threat Lens 로고 */}
+      <div className="relative">
+        <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+          <div className="relative">
+            {/* 외부 렌즈 링 */}
+            <div className="w-6 h-6 border-2 border-white rounded-full flex items-center justify-center">
+              {/* 내부 눈동자/센서 */}
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
             </div>
+            {/* 스캔 라인 효과 */}
+            <div className="absolute -top-1 -left-1 w-8 h-8 border border-white/30 rounded-full animate-ping"></div>
           </div>
-        </header>
+        </div>
+        {/* 작은 방패 아이콘 오버레이 */}
+        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+          <Shield className="h-2.5 w-2.5 text-white" />
+        </div>
+      </div>
+
+      {/* 사이트 이름 */}
+      <div>
+        <h1
+          className={`text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent`}
+        >
+          Threat Lens
+        </h1>
+        <p className={`text-xs ${textSub} -mt-1`}>Advanced Threat Intelligence</p>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-3">
+      <button
+        onClick={toggleChart}
+        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
+          showChart
+            ? "bg-blue-600 text-white"
+            : isDarkMode
+              ? "bg-gray-800 hover:bg-gray-700 text-gray-300"
+              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+        }`}
+      >
+        <BarChart3 className="h-4 w-4" />
+        <span className="text-sm">통계</span>
+      </button>
+      <button
+        onClick={toggleTheme}
+        className={`relative w-14 h-7 rounded-full transition-all duration-300 ease-in-out ${
+          isDarkMode ? "bg-gray-600" : "bg-gray-300"
+        } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}
+      >
+        <div
+          className={`absolute top-0.5 w-6 h-6 rounded-full transition-all duration-300 ease-in-out transform shadow-md flex items-center justify-center ${
+            isDarkMode ? "translate-x-0.5 bg-gray-800" : "translate-x-7 bg-white"
+          }`}
+        >
+          {isDarkMode ? (
+            <Moon className="h-3 w-3 text-blue-400" />
+          ) : (
+            <Sun className="h-3 w-3 text-yellow-500" />
+          )}
+        </div>
+      </button>
+      <button
+        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+        onClick={() => setShowNotificationModal(true)}
+      >
+        <Bell className="h-4 w-4" />
+        알림받기
+      </button>
+    </div>
+  </div>
+</header>
+
 
         {/* 차트 모달 */}
         {/* 차트 모달 */}
