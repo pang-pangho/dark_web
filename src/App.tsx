@@ -941,11 +941,11 @@ const closeWordCloud = () => {
                                       : item.category === "계정 정보"
                                       ? "bg-blue-700"
                                       : isDarkMode
-                                      ? "bg-gray-700"
-                                      : "bg-gray-200"
+                                      ? "bg-blue-700"
+                                      : "bg-blue-700"
                                   } text-white`}
                                 >
-                                  {item.verified ? "✔️ 검증됨" : item.category}
+                                  {item.verified ? "✔️ 검증됨" : item.category }
                                 </span>
                                 {item.count && (
                                   <span className={textSub}>
@@ -953,7 +953,7 @@ const closeWordCloud = () => {
                                   </span>
                                 )}
                               </div>
-                              <div className={`font-bold mb-1 truncate ${textMain}`}>{item.title}</div>
+                              <div className={`font-bold mb-1 truncate ${textMain}` }>{item.title}</div>
                               <div className={`text-xs mb-1 ${textSub}`}>{item.description}</div>
                               {item.site && (
                                 <div className={`text-xs mb-1 ${textSub}`}>{item.category}</div>
@@ -1122,18 +1122,25 @@ const closeWordCloud = () => {
       <CardContent className="p-6 h-full flex flex-col">
         <div className={`flex items-center justify-between mb-6 pr-2`}>
           <div className="flex items-center gap-3">
-            <button onClick={closeWordCloud}>
+            <button 
+              onClick={closeWordCloud}
+              className={`p-2 rounded-lg transition-colors ${
+                isDarkMode 
+                  ? "hover:bg-gray-800 text-white" 
+                  : "hover:bg-gray-100 text-gray-900"
+              }`}
+            >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
           </div>
-          <span className={`text-xs ${textSub}`}>AI 키워드 분석</span>
+          <span className={`text-xs ${textSub}`}>알고리즘 키워드 분석</span>
         </div>
         
         {keywordLoading ? (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-            <p className={`text-lg ${textMain} mb-2`}>AI 모델로 키워드 분석 중...</p>
+            <p className={`text-lg ${textMain} mb-2`}>TF-IDF 알고리즘 모델로 키워드 분석 중...</p>
             <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
               <div 
                 className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
