@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import io from "socket.io-client";
 import {
   ArrowUp,
@@ -21,8 +21,8 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 import WordCloud from "react-d3-cloud";
 
-const SOCKET_URL = "http://localhost:4000";
-// const SOCKET_URL = "https://dark-web-6squ.onrender.com";
+// const SOCKET_URL = "http://localhost:4000";
+const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 const detectLanguage = (text: string): string => {
   const langPatterns = {
     en: /\b(the|is|are|and|or|but|in|on|at|to|for|with|by|of|from)\b/i,
@@ -40,6 +40,8 @@ const detectLanguage = (text: string): string => {
   }
   return "unknown";
 };
+
+
 
 const languageNames: Record<string, string> = {
   en: "영어 (English)",
@@ -135,6 +137,46 @@ function App() {
   const [showWordCloud, setShowWordCloud] = useState(false);
   const [selectedActor, setSelectedActor] = useState<string | null>(null);
 
+  const [keywordWorker, setKeywordWorker] = useState<Worker | null>(null);
+const [keywordLoading, setKeywordLoading] = useState(false);
+const [extractionProgress, setExtractionProgress] = useState(0);
+
+
+  useEffect(() => {
+    const worker = new Worker(new URL('./keywordWorker.js', import.meta.url), {
+      type: 'module'
+    });
+  
+    worker.onmessage = (event) => {
+      const { type, keywords, progress, error } = event.data;
+      
+      switch (type) {
+        case 'LOADING_PROGRESS':
+          // 안전한 진행률 계산
+          const safeProgress = progress && typeof progress.progress === 'number' 
+            ? Math.round(Math.max(0, Math.min(100, progress.progress * 100)))
+            : 0;
+          setExtractionProgress(safeProgress);
+          break;
+        case 'KEYWORDS_EXTRACTED':
+          setWordCloudWords(keywords || []); // 빈 배열 기본값
+          setKeywordLoading(false);
+          setExtractionProgress(100); // 완료 시 100%
+          break;
+        case 'EXTRACTION_ERROR':
+          console.error('키워드 추출 오류:', error);
+          setKeywordLoading(false);
+          setExtractionProgress(0); // 오류 시 0%
+          break;
+      }
+    };
+    
+    setKeywordWorker(worker);
+  
+    return () => {
+      worker.terminate();
+    };
+  }, []);
   function getChangeRate(today: number, yesterday: number): { rate: number; up: boolean } {
     if (yesterday === 0) {
       if (today === 0) return { rate: 0, up: false };
@@ -150,6 +192,11 @@ function App() {
       .then(setDashboardStats)
       .catch(() => setDashboardStats(null));
   };
+// 누락된 함수 추가
+const closeWordCloud = () => {
+  setShowWordCloud(false);
+  setSelectedActor(null);
+};
 
   // 실제 차트 데이터 fetch 함수
   const fetchRealChartData = async () => {
@@ -211,7 +258,7 @@ function App() {
     return () => {
       sock.disconnect();
     };
-  }, );
+  }, []);
 
   const selectPlatform = (platform: "telegram" | "discord") => {
     setSelectedPlatform(platform);
@@ -385,46 +432,30 @@ function App() {
   const textSub = isDarkMode ? "text-gray-400" : "text-gray-600";
   const textMain = isDarkMode ? "text-white" : "text-gray-900";
 
-  function extractKeywords(messages: Message[], maxWords = 20): WordCloudWord[] {
-    const stopwords = new Set([
-      "the","is","are","and","or","but","in","on","at","to","for","with","by","of","from",
-      "a","an","it","this","that","i","you","he","she","we","they","me","my","your","our",
-      "가","이","은","는","을","를","에","의","도","로","과","와","에서","하다","있다","및","등","수","것","들","한","또한","또는","까지","부터","보다","다","고",
-      "https", "http", "www", "com", "org", "net", "io", "co", "kr", "me", "ru", "de", "fr", "es", "it", "jp", "cn",
-      "click", "here", "more", "info", "new", "get", "now", "free", "join", "today","ad","will",
-      "hello", "hi", "hey", "okay", "ok", "lol", "lmao", "yo", "sup", "bro", "yo", "fr", "irl", "pls", "dm", "pm", "lmk", "wsg", "wtf", "idk", "bruh", "cb", "nah", "ikr"
-    ]);
-    const freq: Record<string, number> = {};
-    for (const msg of messages) {
-      const words = (msg.content || "")
-        .toLowerCase()
-        .replace(/[^a-zA-Z0-9가-힣 ]/g, " ")
-        .split(/\s+/);
-      for (const w of words) {
-        if (!w || stopwords.has(w) || w.length < 2) continue;
-        if (/^[0-9a-f]{6,}$/.test(w)) continue;
-        if (/^\d+$/.test(w)) continue;
-        freq[w] = (freq[w] || 0) + 1;
-      }
-    }
+  const extractAIKeywords = (messages: Message[]) => {
+    if (!keywordWorker || keywordLoading) return;
     
-    const result = Object.entries(freq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, maxWords)
-      .map(([text, count]) => ({
-        text,
-        value: count,
-      }));
-    return result;
-  }
+    setKeywordLoading(true);
+    setExtractionProgress(0);
+    
+    keywordWorker.postMessage({
+      type: 'EXTRACT_KEYWORDS',
+      data: { messages }
+    });
+  };
+  const [wordCloudWords, setWordCloudWords] = useState<WordCloudWord[]>([]);
 
-  const wordCloudWords = useMemo(() => {
-    if (!showWordCloud) return [];
-    if (selectedActor === "전체 데이터" || !selectedActor) {
-      return extractKeywords(messages);
+  useEffect(() => {
+    if (showWordCloud && messages.length > 0) {
+      const messagesToAnalyze = selectedActor === "전체 데이터" || !selectedActor 
+        ? messages 
+        : messages.filter(msg => msg.threat_actor === selectedActor);
+      
+      extractAIKeywords(messagesToAnalyze);
     }
-    return extractKeywords(messages.filter(msg => msg.threat_actor === selectedActor));
   }, [showWordCloud, selectedActor, messages]);
+  
+  
 
   const showWordCloudForCurrentFilter = () => {
     if (monitorActor === null) {
@@ -433,11 +464,6 @@ function App() {
       setSelectedActor(monitorActor);
     }
     setShowWordCloud(true);
-  };
-
-  const closeWordCloud = () => {
-    setShowWordCloud(false);
-    setSelectedActor(null);
   };
 
   // 차트 계산 로직
@@ -1088,55 +1114,74 @@ function App() {
             </section>
 
             {showWordCloud && (
-              <section
-                className={`absolute top-0 w-1/2 transition-all duration-500 ease-in-out transform ${showWordCloud ? "opacity-100" : "opacity-0"}`} 
-                style={{ left: 'calc(50% + 1.5rem)' }}
-              >
-                <Card className={sectionCard + " mb-6"} style={{ height: '600px' }}>
-                  <CardContent className="p-6 h-full flex flex-col">
-                    <div className={`flex items-center justify-between mb-6 pr-2`}>
-                      <div className="flex items-center gap-3">
-                        <button onClick={closeWordCloud}>
-                          <ArrowLeft className="h-4 w-4" />
-                        </button>
-                        <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
-                      </div>
-                      <span className={`text-xs ${textSub}`}>키워드 분석</span>
-                    </div>
-                    <div className="relative h-[485px] overflow-auto">
-                      {wordCloudWords.length > 0 ? (
-                        <WordCloud
-                          data={wordCloudWords}
-                          width={400}
-                          height={350}
-                          font="Arial"
-                          fontStyle="normal"
-                          fontWeight="bold"
-                          fontSize={(word) => Math.max(12, Math.min(word.value * 8, 38))}
-                          spiral="archimedean"
-                          rotate={() => 0}
-                          padding={5}
-                          random={() => 0.5}
-                          fill={(_d: any, i: number) => {
-                            const colors = ["#8b5cf6", "#3b82f6", "#ef4444", "#06b6d4", "#10b981", "#f59e0b", "#6b7280"];
-                            return colors[i % colors.length];
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <p className={`text-lg ${textSub}`}>키워드 없음</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className={`mt-4 p-4 rounded-lg ${isDarkMode ? "bg-gray-800" : "bg-gray-100"}`}>
-                      <p className={`text-sm ${textSub}`}>
-                        <strong className={textMain}>{selectedActor || "전체 데이터"}</strong>의 주요 키워드를 실시간 분석한 결과입니다. 글자 크기는 해당 키워드의 언급 빈도를 나타냅니다.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </section>
+  <section
+    className={`absolute top-0 w-1/2 transition-all duration-500 ease-in-out transform ${showWordCloud ? "opacity-100" : "opacity-0"}`} 
+    style={{ left: 'calc(50% + 1.5rem)' }}
+  >
+    <Card className={sectionCard + " mb-6"} style={{ height: '600px' }}>
+      <CardContent className="p-6 h-full flex flex-col">
+        <div className={`flex items-center justify-between mb-6 pr-2`}>
+          <div className="flex items-center gap-3">
+            <button onClick={closeWordCloud}>
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <h3 className={`text-xl font-bold ${textMain}`}>{selectedActor || "전체 데이터"}</h3>
+          </div>
+          <span className={`text-xs ${textSub}`}>AI 키워드 분석</span>
+        </div>
+        
+        {keywordLoading ? (
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p className={`text-lg ${textMain} mb-2`}>AI 모델로 키워드 분석 중...</p>
+            <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                style={{ width: `${extractionProgress}%` }}
+              ></div>
+            </div>
+            <p className={`text-sm ${textSub}`}>{extractionProgress}% 완료</p>
+          </div>
+        ) : (
+          <div className="relative h-[485px] overflow-auto">
+            {wordCloudWords.length > 0 ? (
+              <WordCloud
+                data={wordCloudWords}
+                width={400}
+                height={350}
+                font="Arial"
+                fontStyle="normal"
+                fontWeight="bold"
+                fontSize={(word) => Math.max(8, Math.min(word.value * 3, 24))}
+                spiral="archimedean"
+                rotate={() => 0}
+                padding={4}
+                random={() => 0.5}
+                fill={(_d: any, i: number) => {
+                  const colors = ["#8b5cf6", "#3b82f6", "#ef4444", "#06b6d4", "#10b981", "#f59e0b", "#6b7280"];
+                  return colors[i % colors.length];
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className={`text-lg ${textSub}`}>키워드 없음</p>
+              </div>
             )}
+          </div>
+        )}
+        
+        <div className={`mt-4 p-4 rounded-lg ${isDarkMode ? "bg-gray-800" : "bg-gray-100"}`}>
+          <p className={`text-sm ${textSub}`}>
+            <strong className={textMain}>{selectedActor || "전체 데이터"}</strong>의 주요 키워드를 
+            <span className="text-blue-500 font-semibold"> TF-IDF 알고리즘</span>로 분석한 결과입니다. 
+            사이버 보안 관련 키워드는 가중치가 적용됩니다.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  </section>
+)}
+
           </div>
         </main>
 
