@@ -95,8 +95,7 @@ type ChartData = {
   darkwebCount?: number;
   telegramCount?: number;
 };
-// 기존 상태들 아래에 추가
-const [wordCloudWords, setWordCloudWords] = useState<WordCloudWord[]>([]);
+
 
 type WordCloudWord = {
   text: string;
@@ -113,7 +112,8 @@ function App() {
   const [darkwebLoading, setDarkwebLoading] = useState(true);
   const [darkwebError, setDarkwebError] = useState<string | null>(null);
   const [darkwebCategory, setDarkwebCategory] = useState<string | null>(null);
-
+// 기존 상태들 아래에 추가
+const [wordCloudWords, setWordCloudWords] = useState<WordCloudWord[]>([]);
   const [dashboardStats, setDashboardStats] = useState<{
     totalThreats: number;
     todayThreats: number;
