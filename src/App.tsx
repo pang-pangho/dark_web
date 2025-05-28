@@ -22,8 +22,8 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 import WordCloud from "react-d3-cloud";
 
-const SOCKET_URL = "http://localhost:4000";
-// const SOCKET_URL = "https://dark-web-6squ.onrender.com";
+// const SOCKET_URL = "http://localhost:4000";
+const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 const detectLanguage = (text: string): string => {
   const langPatterns = {
     en: /\b(the|is|are|and|or|but|in|on|at|to|for|with|by|of|from)\b/i,
