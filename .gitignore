@@ -11,7 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
-
+.vigilant-walker-460406-i8-1fba3047567f.json
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

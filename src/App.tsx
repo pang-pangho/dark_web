@@ -14,6 +14,7 @@ import {
   BarChart3,
   ArrowLeft,
   Cloud,
+
 } from "lucide-react";
 import { Card, CardContent } from "./components/ui/card";
 import { ThemeProvider } from "./components/theme-provider";
@@ -21,8 +22,8 @@ import "./index.css";
 import TimeAgo from "react-timeago";
 import WordCloud from "react-d3-cloud";
 
-// const SOCKET_URL = "http://localhost:4000";
-const SOCKET_URL = "https://dark-web-6squ.onrender.com";
+const SOCKET_URL = "http://localhost:4000";
+// const SOCKET_URL = "https://dark-web-6squ.onrender.com";
 const detectLanguage = (text: string): string => {
   const langPatterns = {
     en: /\b(the|is|are|and|or|but|in|on|at|to|for|with|by|of|from)\b/i,
@@ -94,6 +95,8 @@ type ChartData = {
   darkwebCount?: number;
   telegramCount?: number;
 };
+// 기존 상태들 아래에 추가
+const [wordCloudWords, setWordCloudWords] = useState<WordCloudWord[]>([]);
 
 type WordCloudWord = {
   text: string;
@@ -104,7 +107,6 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<Record<string | number, boolean>>({});
   const [monitorActor, setMonitorActor] = useState<string | null>(null);
   const [blockedActors, setBlockedActors] = useState<string[]>([]);
   const [darkwebItems, setDarkwebItems] = useState<DarkwebItem[]>([]);
@@ -142,41 +144,109 @@ const [keywordLoading, setKeywordLoading] = useState(false);
 const [extractionProgress, setExtractionProgress] = useState(0);
 
 
-  useEffect(() => {
-    const worker = new Worker(new URL('./keywordWorker.js', import.meta.url), {
-      type: 'module'
+
+// 기존 상태에 추가
+const [messageTranslations, setMessageTranslations] = useState<Record<string, {
+  translatedText: string;
+  sourceLanguage: string;
+  isTranslated: boolean;
+}>>({})
+const [translatingMessages, setTranslatingMessages] = useState<Set<string>>(new Set())
+
+// 개별 메시지 번역 함수
+const translateMessage = async (messageId: string, content: string) => {
+  if (translatingMessages.has(messageId)) return;
+  
+  setTranslatingMessages(prev => new Set(prev).add(messageId));
+  
+  try {
+    const response = await fetch(`${SOCKET_URL}/api/translate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: content,
+        sourceLanguage: 'auto',
+        targetLanguage: 'ko' // 한국어로 번역
+      })
     });
-  
-    worker.onmessage = (event) => {
-      const { type, keywords, progress, error } = event.data;
-      
-      switch (type) {
-        case 'LOADING_PROGRESS':
-          // 안전한 진행률 계산
-          const safeProgress = progress && typeof progress.progress === 'number' 
-            ? Math.round(Math.max(0, Math.min(100, progress.progress * 100)))
-            : 0;
-          setExtractionProgress(safeProgress);
-          break;
-        case 'KEYWORDS_EXTRACTED':
-          setWordCloudWords(keywords || []); // 빈 배열 기본값
-          setKeywordLoading(false);
-          setExtractionProgress(100); // 완료 시 100%
-          break;
-        case 'EXTRACTION_ERROR':
-          console.error('키워드 추출 오류:', error);
-          setKeywordLoading(false);
-          setExtractionProgress(0); // 오류 시 0%
-          break;
-      }
-    };
+
+    if (!response.ok) {
+      throw new Error('번역 요청 실패');
+    }
+
+    const result = await response.json();
     
-    setKeywordWorker(worker);
+    setMessageTranslations(prev => ({
+      ...prev,
+      [messageId]: {
+        translatedText: result.translatedText,
+        sourceLanguage: result.sourceLanguage,
+        isTranslated: true
+      }
+    }));
+  } catch (error) {
+    console.error('메시지 번역 오류:', error);
+    setMessageTranslations(prev => ({
+      ...prev,
+      [messageId]: {
+        translatedText: '번역 중 오류가 발생했습니다.',
+        sourceLanguage: 'unknown',
+        isTranslated: true
+      }
+    }));
+  } finally {
+    setTranslatingMessages(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(messageId);
+      return newSet;
+    });
+  }
+};
+
+
+
+
+
+useEffect(() => {
+  const worker = new Worker(new URL('./keywordWorker.js', import.meta.url), {
+    type: 'module'
+  });
+
+  worker.onmessage = (event) => {
+    const { type, progress, error, keywords } = event.data;
+    
+    switch (type) {
+      case 'LOADING_PROGRESS':
+        const safeProgress = progress && typeof progress.progress === 'number' 
+          ? Math.round(Math.max(0, Math.min(100, progress.progress * 100)))
+          : 0;
+        setExtractionProgress(safeProgress);
+        break;
+      case 'KEYWORDS_EXTRACTED':
+        // 워드클라우드 데이터 설정
+        if (keywords && Array.isArray(keywords)) {
+          setWordCloudWords(keywords);
+        }
+        setKeywordLoading(false);
+        setExtractionProgress(100);
+        break;
+      case 'EXTRACTION_ERROR':
+        console.error('키워드 추출 오류:', error);
+        setKeywordLoading(false);
+        setExtractionProgress(0);
+        break;
+    }
+  };
   
-    return () => {
-      worker.terminate();
-    };
-  }, []);
+  setKeywordWorker(worker);
+
+  return () => {
+    worker.terminate();
+  };
+}, []);
+
   function getChangeRate(today: number, yesterday: number): { rate: number; up: boolean } {
     if (yesterday === 0) {
       if (today === 0) return { rate: 0, up: false };
@@ -192,6 +262,11 @@ const [extractionProgress, setExtractionProgress] = useState(0);
       .then(setDashboardStats)
       .catch(() => setDashboardStats(null));
   };
+
+
+
+
+
 // 누락된 함수 추가
 const closeWordCloud = () => {
   setShowWordCloud(false);
@@ -301,12 +376,6 @@ const closeWordCloud = () => {
     }
   };
 
-  const toggleExpand = (id: string | number) => {
-    setExpandedMessages((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
 
   useEffect(() => {
     fetch(`${SOCKET_URL}/api/messages`)
@@ -431,30 +500,11 @@ const closeWordCloud = () => {
   const borderB = isDarkMode ? "border-gray-800" : "border-gray-200";
   const textSub = isDarkMode ? "text-gray-400" : "text-gray-600";
   const textMain = isDarkMode ? "text-white" : "text-gray-900";
-
-  const extractAIKeywords = (messages: Message[]) => {
-    if (!keywordWorker || keywordLoading) return;
-    
-    setKeywordLoading(true);
-    setExtractionProgress(0);
-    
-    keywordWorker.postMessage({
-      type: 'EXTRACT_KEYWORDS',
-      data: { messages }
-    });
-  };
-  const [wordCloudWords, setWordCloudWords] = useState<WordCloudWord[]>([]);
-
-  useEffect(() => {
-    if (showWordCloud && messages.length > 0) {
-      const messagesToAnalyze = selectedActor === "전체 데이터" || !selectedActor 
-        ? messages 
-        : messages.filter(msg => msg.threat_actor === selectedActor);
-      
-      extractAIKeywords(messagesToAnalyze);
-    }
-  }, [showWordCloud, selectedActor, messages]);
   
+  
+  
+
+
   
 
   const showWordCloudForCurrentFilter = () => {
@@ -463,8 +513,25 @@ const closeWordCloud = () => {
     } else {
       setSelectedActor(monitorActor);
     }
+    
+    // 키워드 추출 시작
+    setKeywordLoading(true);
+    setExtractionProgress(0);
     setShowWordCloud(true);
+    
+    // 워커에 메시지 전송
+    if (keywordWorker) {
+      const filteredData = monitorActor 
+        ? messages.filter(msg => msg.threat_actor === monitorActor)
+        : messages;
+      
+      keywordWorker.postMessage({
+        type: 'EXTRACT_KEYWORDS',
+        data: filteredData.map(msg => msg.content)
+      });
+    }
   };
+  
 
   // 차트 계산 로직
   const maxValue = chartData.length > 0 ? Math.max(...chartData.map((d) => Math.max(d.totalThreats, d.todayThreats))) : 1;
@@ -494,8 +561,43 @@ const closeWordCloud = () => {
       <div className={`flex min-h-screen flex-col ${bgMain}`}>
         <header className={`border-b p-4 ${borderHeader}`}>
           <div className="flex items-center justify-between">
-            <h1 className={`text-2xl font-bold ${textMain}`}>Untitle</h1>
+            
+          <div className="flex items-center gap-3">
+              {/* Threat Lens 로고 */}
+              <div className="relative">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-lg flex items-center justify-center shadow-lg">
+                  <div className="relative">
+                    {/* 외부 렌즈 링 */}
+                    <div className="w-6 h-6 border-2 border-white rounded-full flex items-center justify-center">
+                      {/* 내부 눈동자/센서 */}
+                      <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                    </div>
+                    {/* 스캔 라인 효과 */}
+                    <div className="absolute -top-1 -left-1 w-8 h-8 border border-white/30 rounded-full animate-ping"></div>
+                  </div>
+                </div>
+                {/* 작은 방패 아이콘 오버레이 */}
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+                  <Shield className="h-2.5 w-2.5 text-white" />
+                </div>
+              </div>
+
+              {/* 사이트 이름 */}
+              <div>
+                <h1
+                  className={`text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent`}
+                >
+                  Threat Lens
+                </h1>
+                <p className={`text-xs ${textSub} -mt-1`}>Advanced Threat Intelligence</p>
+              </div>
+            </div>
+
+
+
             <div className="flex items-center gap-3">
+            
+          
               <button
                 onClick={toggleChart}
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
@@ -537,8 +639,16 @@ const closeWordCloud = () => {
             </div>
           </div>
         </header>
+          
 
-        {/* 차트 모달 */}
+          
+
+         
+
+      
+
+      
+
         {/* 차트 모달 */}
 {showChart && (
   <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -845,6 +955,7 @@ const closeWordCloud = () => {
                 </div>
               </CardContent>
             </Card>
+
             <Card className={card2}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -1043,70 +1154,130 @@ const closeWordCloud = () => {
                     </div>
                   ) : (
                     <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
-                      {filteredMessages.map((message, index) => (
-                        <div
-                          key={message.id || index}
-                          className={`border-b p-4 ${borderB} ${index === 0 ? (isDarkMode ? "bg-blue-950/20" : "bg-blue-100/20") : ""}`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="bg-red-900 text-white text-xs px-2 py-0.5 rounded mr-2">
-                              {message.threat_actor}
-                            </span>
-                            <span className="text-xs text-gray-300">
-                              <TimeAgo date={message.rawDate} />
-                            </span>
-                          </div>
-                          <div className="mb-2">
-                            <div className={isDarkMode ? "text-white" : "text-gray-900"}>
-                              {message.content}
-                              {message.showTranslation && (
-                                <span className={isDarkMode ? "ml-2 text-xs text-green-400" : "ml-2 text-xs text-green-600"}>
-                                  (번역됨)
-                                </span>
-                              )}
-                              {!message.showTranslation &&
-                                message.detectedLanguage !== "ko" &&
-                                message.detectedLanguage !== "en" && (
-                                  <span className="ml-2 text-xs text-gray-500">
-                                    ({languageNames[message.detectedLanguage || "unknown"] || message.detectedLanguage})
-                                  </span>
-                                )}
-                            </div>
-                          </div>
-                          {!expandedMessages[message.id || index] && (
-                            <div className="mt-2">
-                              <button
-                                className="text-xs text-gray-400"
-                                onClick={() => toggleExpand(message.id || index)}
-                              >
-                                더 보기...
-                              </button>
-                            </div>
-                          )}
-                          <div className="flex mt-2 gap-2 text-xs text-gray-500">
-                            <button
-                              className="flex items-center"
-                              onClick={() => setMonitorActor(message.threat_actor)}
-                            >
-                              <Eye className="mr-1 h-3 w-3" />
-                              모니터링
-                            </button>
-                            <button
-                              className="flex items-center"
-                              onClick={() =>
-                                setBlockedActors((prev) =>
-                                  prev.includes(message.threat_actor)
-                                    ? prev
-                                    : [...prev, message.threat_actor]
-                                )
-                              }
-                            >
-                              <Shield className="mr-1 h-3 w-3" />
-                              차단
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                      {filteredMessages.map((message, index) => {
+  const messageTranslation = messageTranslations[message.id];
+  const isTranslating = translatingMessages.has(message.id);
+  const showOriginal = message.detectedLanguage === 'ko' || message.detectedLanguage === 'unknown';
+  
+  return (
+    <div
+      key={message.id || index}
+      className={`border-b p-4 ${borderB} ${index === 0 ? (isDarkMode ? "bg-blue-950/20" : "bg-blue-100/20") : ""}`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="bg-red-900 text-white text-xs px-2 py-0.5 rounded mr-2">
+          {message.threat_actor}
+        </span>
+        <span className="text-xs text-gray-300">
+          <TimeAgo date={message.rawDate} />
+        </span>
+      </div>
+      
+      {/* 메시지 내용 */}
+      <div className="mb-2">
+        <div className={isDarkMode ? "text-white" : "text-gray-900"}>
+          {/* 번역된 내용이 있고 표시 중이면 번역된 내용, 아니면 원본 */}
+          {messageTranslation?.isTranslated && !showOriginal ? (
+            <div>
+              <div className="mb-2">{messageTranslation.translatedText}</div>
+              <div className="text-xs text-green-400 mb-2">
+                ✓ 번역됨 ({languageNames[messageTranslation.sourceLanguage] || messageTranslation.sourceLanguage} → 한국어)
+              </div>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-gray-400 hover:text-gray-300">
+                  원문 보기
+                </summary>
+                <div className="mt-1 text-gray-500 italic">
+                  {message.content}
+                </div>
+              </details>
+            </div>
+          ) : (
+            <div>
+              {message.content}
+              {!showOriginal && (
+                <span className="ml-2 text-xs text-gray-500">
+                  ({languageNames[message.detectedLanguage || "unknown"] || message.detectedLanguage})
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* 메시지 액션 버튼들 */}
+      <div className="flex mt-2 gap-2 text-xs text-gray-500">
+        <button
+          className="flex items-center hover:text-blue-400 transition-colors"
+          onClick={() => setMonitorActor(message.threat_actor)}
+        >
+          <Eye className="mr-1 h-3 w-3" />
+          모니터링
+        </button>
+        <button
+          className="flex items-center hover:text-red-400 transition-colors"
+          onClick={() =>
+            setBlockedActors((prev) =>
+              prev.includes(message.threat_actor)
+                ? prev
+                : [...prev, message.threat_actor]
+            )
+          }
+        >
+          <Shield className="mr-1 h-3 w-3" />
+          차단
+        </button>
+        
+        {/* 번역 버튼 */}
+        {!showOriginal && (
+          <button
+            className="flex items-center hover:text-emerald-400 transition-colors disabled:opacity-50"
+            onClick={() => translateMessage(message.id, message.content)}
+            disabled={isTranslating}
+          >
+            {isTranslating ? (
+              <>
+                <div className="mr-1 h-3 w-3 border border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                번역 중...
+              </>
+            ) : messageTranslation?.isTranslated ? (
+              <>
+                <MessageCircle className="mr-1 h-3 w-3" />
+                원문 보기
+              </>
+            ) : (
+              <>
+                <MessageCircle className="mr-1 h-3 w-3" />
+                번역
+              </>
+            )}
+          </button>
+        )}
+        
+        {/* 번역된 내용이 있을 때 원문/번역 토글 버튼 */}
+        {messageTranslation?.isTranslated && (
+          <button
+            className="flex items-center hover:text-blue-400 transition-colors"
+            onClick={() => {
+              // 원문과 번역 토글 (이미 번역된 경우)
+              const currentTranslation = messageTranslations[message.id];
+              setMessageTranslations(prev => ({
+                ...prev,
+                [message.id]: {
+                  ...currentTranslation,
+                  isTranslated: !currentTranslation.isTranslated
+                }
+              }));
+            }}
+          >
+            <ArrowLeft className="mr-1 h-3 w-3" />
+            {messageTranslation.isTranslated && !showOriginal ? '원문' : '번역'}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+})}
                     </div>
                   )}
                 </CardContent>
